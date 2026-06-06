@@ -1,0 +1,7 @@
+name = "experiments_NeuralOperators"
+authors = ["Isaia Zollo (GSoC 2026), Eric Neiva, Martina Gatti, Nicholas Mueller"]
+[compat]
+julia = "1.12.6"
+DrWatson = "2.19.1"
+[deps]
+DrWatson = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
