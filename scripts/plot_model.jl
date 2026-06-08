@@ -10,14 +10,17 @@ using CairoMakie
 using AlgebraOfGraphics
 
 # Load custom modules
-include(srcdir("DataGeneration.jl"))
+isdefined(Main, :DataGeneration) || include(srcdir("DataGeneration.jl"))
 using .DataGeneration
 
-include(srcdir("DeepONetArch.jl"))
+isdefined(Main, :DeepONetArch) || include(srcdir("DeepONetArch.jl"))
 using .DeepONetArch
 
-include(srcdir("HashRegistry.jl"))
+isdefined(Main, :HashRegistry) || include(srcdir("HashRegistry.jl"))
 using .HashRegistry
+
+isdefined(Main, :ModelTypes) || include(srcdir("ModelTypes.jl"))
+using .ModelTypes
 
 """
     predict_deeponet(model, f_input, x_input, ps, st)
@@ -31,7 +34,7 @@ function predict_deeponet(model, f_input, x_input, ps, st)
 end
 
 """
-    run_plot_deeponet(; model_hash::String, kwargs...)
+    run_plot(model::DeepONet; model_hash::String, kwargs...)
 
 Evaluates a trained DeepONet model on an unseen parameter (Zero-Shot execution),
 benchmarks its inference time against the Gridap FEM solver, and generates
@@ -54,7 +57,7 @@ It queries the central `registry.json` to automatically retrieve the original
 - Updates `data/registry.json` under the "evaluations" category.
 - **Returns:** `eval_hash::String` confirming successful plot generation.
 """
-function run_plot_deeponet(;
+function run_plot(model::ModelTypes.DeepONet;
     model_hash::String,
     sigma_test::Float64=0.03,
     m_sensors::Int=100,
@@ -69,12 +72,12 @@ function run_plot_deeponet(;
     end
     model_config = registry["models"][model_hash]
     data_hash = model_config["data_hash"] # Extract the hash of the original data
-    m_type = lowercase(model_config["model_type"])
+    model_type = ModelTypes.get_model_name(model)
 
     # Configuration and evaluation
     config = @strdict(model_hash, sigma_test)
     eval_hash = HashRegistry.config_hash(config)
-    save_path = plotsdir(m_type, "eval_$(eval_hash).png")
+    save_path = plotsdir(lowercase(model_type), "eval_$(eval_hash).png")
 
     if HashRegistry.check_registry("evaluations", eval_hash) && isfile(save_path)
         println("Plot already exists for Hash: [$eval_hash]. Check $save_path")
@@ -85,7 +88,7 @@ function run_plot_deeponet(;
     println("Evaluating unseen parameter: σ = $sigma_test")
 
     # Load Model Weights
-    weights_path = datadir("models", m_type, "model_$(model_hash).jld2")
+    weights_path = datadir("models", lowercase(model_type), "model_$(model_hash).jld2")
     weights_data = load(weights_path)
     ps_trained = weights_data["ps"]
     st_trained = weights_data["st"]
@@ -248,7 +251,7 @@ function run_plot_deeponet(;
         axis=merge(axis_common, (; titlevisible=false))
     )
 
-    mkpath(plotsdir(m_type))
+    mkpath(plotsdir(lowercase(model_type)))
     save(save_path, fig)
     HashRegistry.update_registry!("evaluations", eval_hash, config)
 
@@ -265,7 +268,8 @@ if abspath(PROGRAM_FILE) == @__FILE__
     p_lat = length(ARGS) > 2 ? parse(Int, ARGS[3]) : 64
     hid = length(ARGS) > 3 ? parse(Int, ARGS[4]) : 64
 
-    run_plot_deeponet(
+    run_plot(
+        ModelTypes.DeepONet();
         sigma_test=s_test,
         m_sensors=m_sens,
         p_latent=p_lat,

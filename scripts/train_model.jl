@@ -13,11 +13,14 @@ using MLUtils
 # using CairoMakie, AlgebraOfGraphics
 
 # Load data generation module
-include(srcdir("DeepONetArch.jl"))
+isdefined(Main, :DeepONetArch) || include(srcdir("DeepONetArch.jl"))
 using .DeepONetArch
 
-include(srcdir("HashRegistry.jl"))
+isdefined(Main, :HashRegistry) || include(srcdir("HashRegistry.jl"))
 using .HashRegistry
+
+isdefined(Main, :ModelTypes) || include(srcdir("ModelTypes.jl"))
+using .ModelTypes
 
 """
     train_deeponet!(train_state, data; epochs=5000)
@@ -87,7 +90,7 @@ function train_deeponet!(train_state, data; epochs=5000)
 end
 
 """
-    run_train_deeponet(; data_hash::String, kwargs...)
+    run_train(model::DeepONet; data_hash::String, kwargs...)
 
 Loads pre-computed High-Fidelity FEM snapshots using the provided `data_hash`,
 formats them into Branch (sensors) and Trunk (coordinates) inputs, and orchestrates
@@ -112,7 +115,7 @@ hyperparameters and the underlying `data_hash`, ensuring strict traceability.
 - Updates `data/registry.json` under the "models" category.
 - **Returns:** `model_hash::String` to be passed to evaluation scripts.
 """
-function run_train_deeponet(;
+function run_train(model::ModelTypes.DeepONet;
     data_hash::String,
     n_epochs::Int=20000,
     step_x::Int=10,
@@ -123,7 +126,7 @@ function run_train_deeponet(;
 )
 
     # Configuration and model hash
-    model_type = "DeepONet"
+    model_type = ModelTypes.get_model_name(model)
     config = @strdict(
         model_type,
         data_hash,
@@ -266,5 +269,5 @@ if abspath(PROGRAM_FILE) == @__FILE__
     sx_val = length(ARGS) > 1 ? parse(Int, ARGS[2]) : 10
     st_val = length(ARGS) > 2 ? parse(Int, ARGS[3]) : 5
 
-    run_train_deeponet(n_epochs=e_val, step_x=sx_val, step_t=st_val)
+    run_train(ModelTypes.DeepONet(); n_epochs=e_val, step_x=sx_val, step_t=st_val)
 end

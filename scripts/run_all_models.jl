@@ -2,14 +2,17 @@ using DrWatson
 @quickactivate "experiments_NeuralOperators"
 
 include("generate_data.jl")
-include("train_deeponet.jl")
-include("plot_deeponet.jl")
+include("train_model.jl")
+include("plot_model.jl")
+
+isdefined(Main, :ModelTypes) || include(srcdir("ModelTypes.jl"))
+using .ModelTypes
 
 # Helper function to filter out `nothing` values before passing kwargs
 filter_kwargs(kwargs_dict) = Dict{Symbol,Any}(k => v for (k, v) in kwargs_dict if !isnothing(v))
 
 """
-    run_pipeline(; kwargs...)
+    run_pipeline(model::AbstractNeuralModel=DeepONet(); kwargs...)
 
 Orchestrates the Neural Operator workflow end-to-end using a smart, hash-driven
 caching mechanism. It linearly propagates execution through Data Generation,
@@ -26,7 +29,7 @@ for easy experimentation via the REPL.
 Executes the full chain and prints the resulting `data_hash`, `model_hash`,
 and `eval_hash` to the standard output.
 """
-function run_pipeline(;
+function run_pipeline(model::ModelTypes.AbstractNeuralModel=ModelTypes.DeepONet();
     # Generation Parameters (Optional)
     beta_start::Union{Float64,Nothing}=nothing,
     beta_end::Union{Float64,Nothing}=nothing,
@@ -51,10 +54,11 @@ function run_pipeline(;
     hidden::Union{Int,Nothing}=nothing,
 
     # Evaluation Parameter (Optional)
-    test_sigma::Union{Float64,Nothing}=nothing
+    sigma_test::Union{Float64,Nothing}=nothing
 )
+    model_name_str = ModelTypes.get_model_name(model)
     println("=====================================================")
-    println("STARTING COMPLETE DEEPONET PIPELINE END-TO-END")
+    println("STARTING END-TO-END PIPELINE FOR: $(model_name_str)")
     println("=====================================================")
 
     # Data
@@ -83,14 +87,14 @@ function run_pipeline(;
         :p_latent => p_latent,
         :hidden => hidden
     ))
-    model_hash = run_train_deeponet(; train_kwargs...)
+    model_hash = run_train(model; train_kwargs...)
 
-    # Evaluation
+    # Evaluation and Plot
     plot_kwargs = filter_kwargs(Dict(
         :model_hash => model_hash,
-        :sigma_test => test_sigma
+        :sigma_test => sigma_test
     ))
-    eval_hash = run_plot_deeponet(; plot_kwargs...)
+    eval_hash = run_plot(model; plot_kwargs...)
 
     println("\n=====================================================")
     println("PIPELINE COMPLETED SUCCESSFULLY")
@@ -103,18 +107,31 @@ end
 # Executed only when run from bash terminal
 if abspath(PROGRAM_FILE) == @__FILE__
     # Parsing ARGS with default fallbacks.
-    # Here we expose the most common orchestration flags.
-    # For deep parameter tuning, use `run_pipeline(; kwargs...)` directly in the REPL.
+    # Terminal usage: julia run_all_models.jl [model_type] [epochs] [test_sigma]
 
-    epochs_val = length(ARGS) > 0 ? parse(Int, ARGS[1]) : nothing
-    sigma_val = length(ARGS) > 1 ? parse(Float64, ARGS[2]) : nothing
-    f_data = length(ARGS) > 2 ? parse(Bool, ARGS[3]) : false
-    f_train = length(ARGS) > 3 ? parse(Bool, ARGS[4]) : false
+    # Model (Default: DeepONet)
+    model_instance = ModelTypes.DeepONet()
+    if length(ARGS) > 0
+        m_str = lowercase(ARGS[1])
+        if m_str == "fno"
+            model_instance = FNO()
+        elseif m_str == "nomad"
+            model_instance = NOMAD()
+        elseif m_str == "deeponet"
+            model_instance = ModelTypes.DeepONet()
+        else
+            println("Unknown model '$m_str' passed from terminal. Defaulting to DeepONet.")
+        end
+    end
 
+    # Parsing parameters
+    epochs_val = length(ARGS) > 1 ? parse(Int, ARGS[2]) : nothing
+    sigma_val = length(ARGS) > 2 ? parse(Float64, ARGS[3]) : nothing
+
+    # run the pipeline
     run_pipeline(
+        model_instance,
         epochs=epochs_val,
-        test_sigma=sigma_val,
-        force_data=f_data,
-        force_train=f_train
+        sigma_test=sigma_val
     )
 end

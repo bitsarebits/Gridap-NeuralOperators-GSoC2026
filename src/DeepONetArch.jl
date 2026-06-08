@@ -29,7 +29,7 @@ function build_deeponet(;
 )
     x_sensors = range(-L, L, length=m_sensors)
 
-    deepONet = DeepONet(
+    deepONet = NeuralOperators.DeepONet(
         # BRANCH NET
         Chain(
             Dense(m_sensors => hidden, tanh),

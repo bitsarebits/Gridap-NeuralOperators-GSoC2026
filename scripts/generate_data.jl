@@ -6,10 +6,10 @@ using Gridap
 using GridapROMs
 
 # Load data generation module
-include(srcdir("DataGeneration.jl"))
+isdefined(Main, :DataGeneration) || include(srcdir("DataGeneration.jl"))
 using .DataGeneration
 
-include(srcdir("HashRegistry.jl"))
+isdefined(Main, :HashRegistry) || include(srcdir("HashRegistry.jl"))
 using .HashRegistry
 
 """
