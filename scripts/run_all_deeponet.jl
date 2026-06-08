@@ -11,15 +11,22 @@ filter_kwargs(kwargs_dict) = Dict{Symbol,Any}(k => v for (k, v) in kwargs_dict i
 """
     run_pipeline(; kwargs...)
 
-Orchestrates the DeepONet workflow end-to-end. Skips data generation and training
-if the respective output files already exist, unless forced.
-Exposes all underlying physical, numerical, and architectural parameters.
+Orchestrates the Neural Operator workflow end-to-end using a smart, hash-driven
+caching mechanism. It linearly propagates execution through Data Generation,
+Model Training, and Zero-Shot Evaluation.
+
+If a specific configuration has already been computed in the past, the pipeline
+automatically identifies it via `registry.json` and skips the heavy computations,
+instantly passing the resulting hash to the next stage.
+
+Exposes all underlying physical, numerical, and architectural parameters
+for easy experimentation via the REPL.
+
+# Output
+Executes the full chain and prints the resulting `data_hash`, `model_hash`,
+and `eval_hash` to the standard output.
 """
 function run_pipeline(;
-    # Pipeline Controls
-    force_data::Bool=false,
-    force_train::Bool=false,
-
     # Generation Parameters (Optional)
     beta_start::Union{Float64,Nothing}=nothing,
     beta_end::Union{Float64,Nothing}=nothing,
@@ -50,62 +57,46 @@ function run_pipeline(;
     println("STARTING COMPLETE DEEPONET PIPELINE END-TO-END")
     println("=====================================================")
 
-    # Define artifact paths
-    data_path = datadir("sims", "fem_snapshots.jld2")
-    model_path = datadir("models", "deeponet_weights.jld2")
+    # Data
+    gen_kwargs = filter_kwargs(Dict(
+        :beta_start => beta_start,
+        :beta_end => beta_end,
+        :beta_step => beta_step,
+        :order => order,
+        :L => L,
+        :nx => nx,
+        :t0 => t0,
+        :dt => dt,
+        :tf => tf,
+        :c => c,
+        :theta => theta
+    ))
+    data_hash = run_generate_data(; gen_kwargs...)
 
-    # Generate High-Fidelity Data
-    println("\nChecking Training Data...")
-    if force_data || !isfile(data_path)
-        println("Generating new dataset...")
-        gen_kwargs = filter_kwargs(Dict(
-            :beta_start => beta_start,
-            :beta_end => beta_end,
-            :beta_step => beta_step,
-            :order => order,
-            :L => L,
-            :nx => nx,
-            :t0 => t0,
-            :dt => dt,
-            :tf => tf,
-            :c => c,
-            :theta => theta
-        ))
-        run_generate_data(; gen_kwargs...)
-    else
-        println("Data already exists at $data_path. Skipping generation.")
-    end
-
-    # Train the Neural Operator
-    println("\nChecking DeepONet Model...")
-    if force_train || !isfile(model_path)
-        println("Training model for $epochs epochs...")
-        train_kwargs = filter_kwargs(Dict(
-            :n_epochs => epochs,
-            :step_x => step_x,
-            :step_t => step_t,
-            :m_sensors => m_sensors,
-            :p_latent => p_latent,
-            :hidden => hidden
-        ))
-        run_train_deeponet(; train_kwargs...)
-    else
-        println("Pre-trained model found at $model_path. Skipping training.")
-    end
-
-    # Evaluate and Plot Zero-Shot performance
-    println("\nEvaluating Model on Unseen Data (σ = $test_sigma)...")
-    plot_kwargs = filter_kwargs(Dict(
-        :sigma_test => test_sigma,
+    # Model
+    train_kwargs = filter_kwargs(Dict(
+        :data_hash => data_hash,
+        :n_epochs => epochs,
+        :step_x => step_x,
+        :step_t => step_t,
         :m_sensors => m_sensors,
         :p_latent => p_latent,
         :hidden => hidden
     ))
-    run_plot_deeponet(; plot_kwargs...)
+    model_hash = run_train_deeponet(; train_kwargs...)
+
+    # Evaluation
+    plot_kwargs = filter_kwargs(Dict(
+        :model_hash => model_hash,
+        :sigma_test => test_sigma
+    ))
+    eval_hash = run_plot_deeponet(; plot_kwargs...)
 
     println("\n=====================================================")
     println("PIPELINE COMPLETED SUCCESSFULLY")
-    println("Check the 'plots/deeponet' folder for your results.")
+    println("Data Hash : $data_hash")
+    println("Model Hash: $model_hash")
+    println("Eval Hash : $eval_hash")
     println("=====================================================")
 end
 

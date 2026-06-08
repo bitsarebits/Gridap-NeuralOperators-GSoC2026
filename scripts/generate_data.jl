@@ -9,6 +9,9 @@ using GridapROMs
 include(srcdir("DataGeneration.jl"))
 using .DataGeneration
 
+include(srcdir("HashRegistry.jl"))
+using .HashRegistry
+
 """
     run_generate_data(; kwargs...)
 
@@ -16,8 +19,8 @@ Executes the end-to-end pipeline for generating High-Fidelity (FEM) snapshots.
 
 This function defines the parameter space for the standard deviation (σ) of the
 initial Gaussian pulse and calls the core `generate_fem_snapshots` logic.
-It consolidates the configuration into a metadata dictionary and saves the resulting
-snapshot tensors, spatial grid, and time grid to disk in JLD2 format.
+It calculates a unique SHA-256 hash based on the physical and numerical parameters,
+acting as an automatic caching mechanism to avoid redundant computations.
 
 # Keyword Arguments
 - `beta_start::Float64=1.0`: The starting exponent β for the parameter space `σ = 10^-β`.
@@ -33,12 +36,9 @@ snapshot tensors, spatial grid, and time grid to disk in JLD2 format.
 - `theta::Float64=0.5`: Theta-method parameter (0.5 corresponds to Crank-Nicolson).
 
 # Output
-Saves a `fem_snapshots.jld2` file inside the `data/sims/` directory containing:
-- `snapshots`: The 3D tensor of FEM solutions (Space * Parameters * Time).
-- `x_grid`: The spatial Degrees of Freedom.
-- `t_grid`: The temporal grid.
-- `sigma_values`: The explicit list of σ values used.
-- `config`: A dictionary containing all the generation parameters for reproducibility.
+- Saves the FEM tensors to `data/sims/data_<data_hash>.jld2`.
+- Updates `data/registry.json` linking the configuration to the generated hash.
+- **Returns:** `data_hash::String` to be passed to downstream modeling scripts.
 """
 function run_generate_data(;
     beta_start::Float64=1.0,
@@ -53,13 +53,9 @@ function run_generate_data(;
     c::Float64=1.0,
     theta::Float64=0.5
 )
-    println("--- Starting High-Fidelity FEM Data Generation ---")
 
-    # Define the parameter space
-    σ_values = [[10.0^-β] for β in beta_start:beta_step:beta_end]
-
-    # Define physical and numerical configuration
-    n_sigma = length(σ_values)
+    # Configuration and Hash
+    n_sigma = length(beta_start:beta_step:beta_end)
     config = @strdict(
         beta_start,
         beta_end,
@@ -74,29 +70,39 @@ function run_generate_data(;
         c,
         theta
     )
+    data_hash = HashRegistry.config_hash(config)
+    output_file = datadir("sims", "data_$(data_hash).jld2")
 
-    println("Configuration loaded. Computing snapshots for $(config["n_sigma"]) parameters...")
+    # Cache check
+    if HashRegistry.HashRegistry.check_registry("data", data_hash) && isfile(output_file)
+        println("Dataset already exists with Hash: [$data_hash]. Skipping generation.")
+        return data_hash
+    end
+
+    # Generation if not already existing
+    println("--- Generating new High-Fidelity FEM Data (Hash: $data_hash) ---")
+
+    # Define the parameter space
+    σ_values = [[10.0^-β] for β in beta_start:beta_step:beta_end]
 
     # Generate data using the custom function
     @time results = DataGeneration.generate_fem_snapshots(
         σ_values;
-        order=config["order"],
-        L=config["L"],
-        nx=config["nx"],
-        t0=config["t0"],
-        dt=config["dt"],
-        tf=config["tf"],
-        c=config["c"],
-        θ=config["theta"]
+        order=order,
+        L=L,
+        nx=nx,
+        t0=t0,
+        dt=dt,
+        tf=tf,
+        c=c,
+        θ=theta
     )
 
     println("Generation completed")
     println("Snapshots shape (Nx, N_sigma, Nt): ", size(results.snapshots))
 
-    # Define output path dynamically with datadir
-    output_path = datadir("sims")
-    mkpath(output_path) # Ensure the directory exists
-    output_file = joinpath(output_path, "fem_snapshots.jld2")
+    # Store results
+    mkpath(datadir("sims"))  # Ensure the directory exists
 
     # Save the generated tensors and metadata
     jldsave(output_file;
@@ -107,16 +113,19 @@ function run_generate_data(;
         config=config
     )
 
+    HashRegistry.update_registry!("data", data_hash, config)
     println("Data saved to: $output_file")
+
+    return data_hash
 end
 
 # Executed only when run from bash terminal
 if abspath(PROGRAM_FILE) == @__FILE__
     # Positional argument parsing from terminal.
     # We parse the most common parameters. For full control, use REPL with kwargs.
-    b_start = length(ARGS) > 0 ? parse(Float32, ARGS[1]) : 1.0
-    b_end = length(ARGS) > 1 ? parse(Float32, ARGS[2]) : 2.0
-    b_step = length(ARGS) > 2 ? parse(Float32, ARGS[3]) : 0.2
+    b_start = length(ARGS) > 0 ? parse(Float64, ARGS[1]) : 1.0
+    b_end = length(ARGS) > 1 ? parse(Float64, ARGS[2]) : 2.0
+    b_step = length(ARGS) > 2 ? parse(Float64, ARGS[3]) : 0.2
     nx_val = length(ARGS) > 3 ? parse(Int, ARGS[4]) : 1000
 
     run_generate_data(
