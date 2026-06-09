@@ -10,7 +10,6 @@ Before running the scripts for the first time, instantiate the environment:
 julia> ]
 (@v1.x) pkg> activate .
 (experiments_NeuralOperators) pkg> instantiate
-(experiments_NeuralOperators) pkg> add NNlib
 ```
 
 ## Usage
@@ -19,7 +18,6 @@ julia> ]
 This approach allows access to all keyword arguments.
 
 ```julia
-using experiments_NeuralOperators.ModelTypes
 include("scripts/run_all_models.jl")
 
 # Example for FNO
