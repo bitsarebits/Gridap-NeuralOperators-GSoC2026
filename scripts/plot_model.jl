@@ -1,5 +1,5 @@
 using DrWatson
-@quickactivate "experiments_NeuralOperators"
+@quickactivate :experiments_NeuralOperators
 
 using JLD2
 using Lux
@@ -9,18 +9,6 @@ using Statistics
 using CairoMakie
 using AlgebraOfGraphics
 
-# Load custom modules
-isdefined(Main, :DataGeneration) || include(srcdir("DataGeneration.jl"))
-using .DataGeneration
-
-isdefined(Main, :DeepONetArch) || include(srcdir("DeepONetArch.jl"))
-using .DeepONetArch
-
-isdefined(Main, :HashRegistry) || include(srcdir("HashRegistry.jl"))
-using .HashRegistry
-
-isdefined(Main, :ModelTypes) || include(srcdir("ModelTypes.jl"))
-using .ModelTypes
 
 """
     predict_deeponet(model, f_input, x_input, ps, st)

@@ -1,12 +1,9 @@
 using DrWatson
-@quickactivate "experiments_NeuralOperators"
+@quickactivate :experiments_NeuralOperators
 
 include("generate_data.jl")
 include("train_model.jl")
 include("plot_model.jl")
-
-isdefined(Main, :ModelTypes) || include(srcdir("ModelTypes.jl"))
-using .ModelTypes
 
 # Helper function to filter out `nothing` values before passing kwargs
 filter_kwargs(kwargs_dict) = Dict{Symbol,Any}(k => v for (k, v) in kwargs_dict if !isnothing(v))

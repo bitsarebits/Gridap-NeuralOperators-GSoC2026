@@ -1,5 +1,5 @@
 using DrWatson
-@quickactivate "experiments_NeuralOperators"
+@quickactivate :experiments_NeuralOperators
 
 using JLD2
 using Lux
@@ -11,16 +11,6 @@ using Random
 using Statistics
 using MLUtils
 # using CairoMakie, AlgebraOfGraphics
-
-# Load data generation module
-isdefined(Main, :DeepONetArch) || include(srcdir("DeepONetArch.jl"))
-using .DeepONetArch
-
-isdefined(Main, :HashRegistry) || include(srcdir("HashRegistry.jl"))
-using .HashRegistry
-
-isdefined(Main, :ModelTypes) || include(srcdir("ModelTypes.jl"))
-using .ModelTypes
 
 """
     train_deeponet!(train_state, data; epochs=5000)

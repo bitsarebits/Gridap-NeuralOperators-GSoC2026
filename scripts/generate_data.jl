@@ -1,16 +1,9 @@
 using DrWatson
-@quickactivate "experiments_NeuralOperators"
+@quickactivate :experiments_NeuralOperators
 
 using JLD2
 using Gridap
 using GridapROMs
-
-# Load data generation module
-isdefined(Main, :DataGeneration) || include(srcdir("DataGeneration.jl"))
-using .DataGeneration
-
-isdefined(Main, :HashRegistry) || include(srcdir("HashRegistry.jl"))
-using .HashRegistry
 
 """
     run_generate_data(; kwargs...)
