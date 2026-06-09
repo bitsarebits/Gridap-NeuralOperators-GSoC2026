@@ -1,0 +1,349 @@
+module TrainingLoops
+
+using Lux, Reactant, Enzyme, Optimisers, Random, Statistics, MLUtils, NeuralOperators
+
+# Custom modules
+using ..ModelTypes, ..DeepONetArch, ..FNOArch, ..Utils
+
+export train_deeponet!, train_fno!, prepare_and_train
+
+# ------------- TRAINING FUNCTIONS --------------
+
+"""
+    train_deeponet!(train_state, data; epochs=5000)
+
+Executes the training loop for the DeepONet model.
+The function expects an already initialized `TrainState`.
+Note: The first epoch will trigger the XLA and Enzyme JIT compilation,
+which usually takes a few minutes. After that epochs will be extremely fast.
+
+# Arguments
+- `train_state`: already initialized `TrainState`.
+- `data`: A tuple containing the formatted training data `((f_data, x_data), u_data)`.
+
+# Keyword Arguments
+- `epochs::Int=5000`: Number of training epochs. Default is set low for fast demonstration.
+
+# Returns
+- `ps`: Trained model parameters.
+- `st`: Updated model states.
+"""
+function train_deeponet!(train_state, data; epochs=5000)
+    println("--- Starting Training on Reactant Device ---")
+    println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
+
+    t_start = time()
+    lr_stage = 1
+
+    Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
+        for epoch in 1:epochs
+            _, loss, _, train_state = Training.single_train_step!(
+                AutoEnzyme(), MSELoss(), data, train_state; return_gradients=Val(false)
+            )
+
+            current_loss = Float32(loss)
+
+            if current_loss < 1e-4 && lr_stage == 1
+                println(">>> Epoch $epoch: Loss < 1e-4. Cutting LR to 0.0005 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.0005f0)
+                lr_stage = 2
+            elseif current_loss < 5e-5 && lr_stage == 2
+                println(">>> Epoch $epoch: Loss < 5e-5. Cutting LR to 0.0001 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.0001f0)
+                lr_stage = 3
+            elseif current_loss < 2.3e-5 && lr_stage == 3
+                println(">>> Epoch $epoch: Loss < 2.3e-5. Cutting LR to 0.00001 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.00001f0)
+                lr_stage = 4
+            end
+
+            if epoch == 1
+                t_compiled = time()
+                comp_time = round((t_compiled - t_start) / 60, digits=2)
+                println(">>> Compilation and 1st Epoch finished in $comp_time minutes. Starting fast training... <<<")
+                println("Epoch: $epoch \t Loss: $(Float32(loss))")
+
+            elseif epoch % 500 == 0
+                println("Epoch: $epoch \t Loss: $(Float32(loss))")
+            end
+        end
+    end
+
+    t_end = time()
+    total_mins = round((t_end - t_start) / 60, digits=2)
+    println("--- Training Completed in $total_mins minutes ---")
+
+    return train_state.parameters, train_state.states
+end
+
+"""
+    train_fno!(train_state, dataloader; epochs=10000)
+
+Executes the training loop for the FNO model.
+Unlike DeepONet, FNO utilizes a `DataLoader` for mini-batching across the
+parameter space `N_sigma` natively supported by Lux/Reactant.
+"""
+function train_fno!(train_state, dataloader; epochs=10000)
+    println("--- Starting FNO Training on Reactant Device ---")
+    println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
+
+    t_start = time()
+    lr_stage = 1
+
+    Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
+        for epoch in 1:epochs
+            local current_loss = 0.0f0
+
+            # Iterate over the batches in the dataloader
+            for data in dataloader
+                _, loss_val, _, train_state = Training.single_train_step!(
+                    AutoEnzyme(), MSELoss(), data, train_state; return_gradients=Val(false)
+                )
+                current_loss = Float32(loss_val)
+            end
+
+            if current_loss < 1e-7
+                println(">>> Target hit! Early stop at epoch $epoch! <<<")
+                break
+            elseif current_loss < 7.5e-7 && lr_stage == 4
+                println(">>> Epoch $epoch: Cut LR to 0.00001 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.00001f0)
+                lr_stage = 5
+            elseif current_loss < 1.5e-6 && lr_stage == 3
+                println(">>> Epoch $epoch: Cut LR to 0.00005 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.00005f0)
+                lr_stage = 4
+            elseif current_loss < 3e-6 && lr_stage == 2
+                println(">>> Epoch $epoch: Cut LR to 0.0001 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.0001f0)
+                lr_stage = 3
+            elseif current_loss < 8.2e-6 && lr_stage == 1
+                println(">>> Epoch $epoch: Cut LR to 0.0005 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.0005f0)
+                lr_stage = 2
+            end
+
+            if epoch == 1
+                t_compiled = time()
+                comp_time = round((t_compiled - t_start) / 60, digits=2)
+                println(">>> Compilation and 1st Epoch finished in $comp_time minutes. Fast training start... <<<")
+                println("Epoch: $epoch \t Loss: $current_loss")
+            elseif epoch % 500 == 0
+                println("Epoch: $epoch \t Loss: $current_loss")
+            end
+        end
+    end
+
+    t_end = time()
+    total_mins = round((t_end - t_start) / 60, digits=2)
+    println("--- FNO Training Completed in $total_mins minutes ---")
+
+    return train_state.parameters, train_state.states
+end
+
+
+# --------------- SPECIALIZED DISPATCH ------------------
+
+"""
+    prepare_and_train(model::DeepONet, fem_data::Dict, config::Dict)
+
+Specialized dispatch for formatting High-Fidelity Data into DeepONet's Branch/Trunk
+structure, initializing the architecture on the appropriate hardware device, and
+executing the training loop.
+
+# Arguments
+- `model`: The `DeepONet` struct acting as a dispatch target.
+- `fem_data::Dict`: The loaded High-Fidelity dataset containing snapshots and grids.
+- `config::Dict`: Hyperparameters required for network initialization and slicing.
+
+# Returns
+- Tuple containing: `(ps_cpu, st_cpu, max_u)` safely moved back to RAM.
+"""
+function prepare_and_train(model::ModelTypes.DeepONet, fem_data::Dict, config::Dict)
+    # Extract structural configs
+    n_epochs = config["n_epochs"]
+    step_x = config["step_x"]
+    step_t = config["step_t"]
+    m_sensors = config["m_sensors"]
+    p_latent = config["p_latent"]
+    hidden = config["hidden"]
+
+    # Extract FEM Data
+    snapshots = fem_data["snapshots"]       # Shape: (N_dofs, N_sigma, N_time)
+    x_grid = fem_data["x_grid"]
+    t_grid = fem_data["t_grid"]
+    σ_values = fem_data["sigma_values"]
+    fem_config = fem_data["config"]         # Extract config to get physical domain L
+
+    N_x_full, N_sigma, N_t_full = size(snapshots)
+    println("Loaded FEM Snapshots: $N_x_full spatial DoFs, $N_t_full time steps, $N_sigma parameters.")
+
+    # Data Formatting for DeepONet
+    idx_x = 1:step_x:N_x_full
+    idx_t = 1:step_t:N_t_full
+
+    x_red = x_grid[idx_x]
+    t_red = t_grid[idx_t]
+    N_x_red = length(x_red)
+    N_t_red = length(t_red)
+    N_points = N_x_red * N_t_red
+
+    println("Reduced grid for fast training: $N_points points per parameter.")
+
+    # Model Definition (DeepONet)
+    deepONet, x_sensors = DeepONetArch.build_deeponet(
+        m_sensors=m_sensors,
+        p_latent=p_latent,
+        hidden=hidden,
+        L=fem_config["L"]
+    )
+
+    # Branch Net Input (Sensors): f_train
+    # We sample the initial condition u0 at fixed sensor locations
+    f_train = zeros(Float32, m_sensors, N_sigma)
+
+    pi_f32 = Float32(π)
+    for (i, σ_val) in enumerate(σ_values)
+        σ = σ_val[1]
+        u₀(x) = (1 / √(2 * pi_f32 * σ)) * exp(-x^2 / (2 * σ))
+        f_train[:, i] .= Float32.(u₀.(x_sensors))
+    end
+
+    # Trunk Net Input (Spatio-temporal coordinates): x_train
+    # Create a flattened meshgrid of (x, t)
+    x_flat = repeat(x_red, outer=N_t_red)
+    t_flat = repeat(t_red, inner=N_x_red)
+    x_train = Float32.(vcat(x_flat', t_flat')) # Shape: (2, N_points)
+
+    # Target Output: u_train
+    u_train = zeros(Float32, N_points, N_sigma)
+    snapshots_red = @views snapshots[idx_x, :, idx_t]
+
+    for i in 1:N_sigma
+        u_train[:, i] .= Float32.(vec(snapshots_red[:, i, :]))
+    end
+
+    # Normalize targets for stable training
+    max_u = maximum(abs.(u_train))
+    u_train ./= max_u
+
+    println("\n=== DeepONet Tensor Shapes ===")
+    println("Original Grid         : $(N_x_full) space * $(N_t_full) time")
+    println("Reduced Grid        : $(N_x_red) space * $(N_t_red) time = $(N_points) points")
+    println("Branch Input (f_train): $(size(f_train)) \t -->\t (m_sensors, N_sigma)")
+    println("Trunk Input  (x_train): $(size(x_train)) \t -->\t (2_coordinates, N_points)")
+    println("Target Output (u_train): $(size(u_train)) \t-->\t (N_points, N_sigma)")
+    println("==============================\n")
+
+    # Move data to XLA device using global variables
+    f_data = f_train |> XDEV
+    x_data = x_train |> XDEV
+    u_data = u_train |> XDEV
+    train_data = ((f_data, x_data), u_data)
+
+    # Setup Architecture State
+    rng = Random.default_rng()
+    Random.seed!(rng, 42)
+    ps, st = Lux.setup(rng, deepONet) |> XDEV
+
+    # Training Loop Initialization
+    println("\n--- Initializing Optimizer and TrainState ---")
+    opt = Adam(0.001f0)
+    train_state = Training.TrainState(deepONet, ps, st, opt)
+
+    # @time shows how long the compilation + execution took
+    @time ps_trained, st_trained = train_deeponet!(
+        train_state, train_data;
+        epochs=n_epochs
+    )
+
+    # Move parameters back to CPU before returning for reliable serialization
+    ps_cpu = ps_trained |> CDEV
+    st_cpu = st_trained |> CDEV
+
+    return ps_cpu, st_cpu, Float32(max_u)
+end
+
+"""
+    prepare_and_train(model::FNO, fem_data::Dict, config::Dict)
+
+Specialized dispatch for formatting High-Fidelity Data into FNO's multi-channel
+tensor structure `(N_x, in/out_channels, batch)`.
+Initializes a `DataLoader` for batch processing on the Reactant device.
+"""
+function prepare_and_train(model::ModelTypes.FNO, fem_data::Dict, config::Dict)
+    n_epochs = config["n_epochs"]
+    nx_red = config["nx_red"]
+    nt_red = config["nt_red"]
+    hidden_channels = config["hidden_channels"]
+    modes = config["modes"]
+
+    snapshots = fem_data["snapshots"]
+    x_grid = fem_data["x_grid"]
+    t_grid = fem_data["t_grid"]
+    σ_values = fem_data["sigma_values"]
+
+    N_x_full, N_sigma, N_t_full = size(snapshots)
+    println("Loaded FEM Snapshots: $N_x_full spatial DoFs, $N_t_full time steps, $N_sigma parameters.")
+
+    # Data Reduction
+    idx_x = round.(Int, range(1, N_x_full, length=nx_red))
+    idx_t = round.(Int, range(1, N_t_full, length=nt_red))
+    x_red = x_grid[idx_x]
+    t_red = t_grid[idx_t]
+    N_x_red = length(x_red)
+    N_t_red = length(t_red)
+
+    println("Reduced FNO grid: $N_x_red spatial nodes (optimal for FFT if 2^n), predicting $N_t_red time steps.")
+
+    # Tensor initialization shape: (grid_size, in/out_channels, batch_size)
+    u_in = zeros(Float32, N_x_red, 1, N_sigma)
+    u_out = zeros(Float32, N_x_red, N_t_red, N_sigma)
+
+    pi_f32 = Float32(π)
+    for i in 1:N_sigma
+        σ_val = σ_values[i][1]
+        u₀(x) = (1.0f0 / √(2.0f0 * pi_f32 * σ_val)) * exp(-x^2 / (2.0f0 * σ_val))
+
+        u_in[:, 1, i] .= Float32.(u₀.(x_red))
+        u_out[:, :, i] .= Float32.(snapshots[idx_x, i, idx_t])
+    end
+
+    max_u = maximum(abs.(u_out))
+    u_in ./= max_u
+    u_out ./= max_u
+
+    println("\n=== FNO Tensor Shapes ===")
+    println("Input (u_in):   $(size(u_in)) \t --> (N_x_red, 1_channel, N_sigma)")
+    println("Target (u_out): $(size(u_out)) \t --> (N_x_red, N_t_red, N_sigma)")
+    println("=========================\n")
+
+    # Architecture Initialization
+    fno = FNOArch.build_fno(
+        in_channels=1,
+        out_channels=N_t_red,
+        hidden_channels=hidden_channels,
+        modes=modes
+    )
+
+    # DataLoader setup on Device
+    # Full batch (batchsize=N_sigma) is used as per the notebook
+    dataloader = DataLoader((u_in, u_out); batchsize=N_sigma, shuffle=true) |> XDEV
+
+    rng = Random.default_rng()
+    Random.seed!(rng, 42)
+    ps, st = Lux.setup(rng, fno) |> XDEV
+
+    println("\n--- Initializing Optimizer and TrainState ---")
+    opt = Adam(0.001f0)
+    train_state = Training.TrainState(fno, ps, st, opt)
+
+    @time ps_trained, st_trained = train_fno!(train_state, dataloader; epochs=n_epochs)
+
+    ps_cpu = ps_trained |> CDEV
+    st_cpu = st_trained |> CDEV
+
+    return ps_cpu, st_cpu, Float32(max_u)
+end
+
+end # module
