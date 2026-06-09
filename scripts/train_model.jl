@@ -12,6 +12,11 @@ using Statistics
 using MLUtils
 # using CairoMakie, AlgebraOfGraphics
 
+# Global variables for the Devices
+const CDEV = cpu_device()
+const XDEV = reactant_device(; force=true)
+
+# ------------- TRAINING FUNCTIONS --------------
 """
     train_deeponet!(train_state, data; epochs=5000)
 
@@ -33,7 +38,7 @@ which usually takes a few minutes. After that epochs will be extremely fast.
 """
 function train_deeponet!(train_state, data; epochs=5000)
     println("--- Starting Training on Reactant Device ---")
-    println("(The first epoch will trigger XLA/Enzyme compilation and may take 2-4 minutes)")
+    println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
 
     t_start = time()
     lr_stage = 1
@@ -80,53 +85,92 @@ function train_deeponet!(train_state, data; epochs=5000)
 end
 
 """
-    run_train(model::DeepONet; data_hash::String, kwargs...)
+    train_fno!(train_state, dataloader; epochs=10000)
 
-Loads pre-computed High-Fidelity FEM snapshots using the provided `data_hash`,
-formats them into Branch (sensors) and Trunk (coordinates) inputs, and orchestrates
-the DeepONet training loop via XLA (Reactant.jl).
-
-The function generates a unique `model_hash` derived from both the training
-hyperparameters and the underlying `data_hash`, ensuring strict traceability.
-
-# Required Arguments
-- `data_hash::String`: The 12-character SHA-256 hash of the source FEM dataset.
-
-# Keyword Arguments
-- `n_epochs::Int=20000`: Total training epochs.
-- `step_x::Int=10`: Spatial subsampling step (reduces grid size).
-- `step_t::Int=5`: Temporal subsampling step.
-- `m_sensors::Int=100`: Number of input sensors for the Branch Net.
-- `p_latent::Int=64`: Dimensionality of the latent space (output of Branch/Trunk).
-- `hidden::Int=64`: Number of neurons per hidden layer in the MLPs.
-
-# Output
-- Saves the trained model weights to `data/models/deeponet/model_<model_hash>.jld2`.
-- Updates `data/registry.json` under the "models" category.
-- **Returns:** `model_hash::String` to be passed to evaluation scripts.
+Executes the training loop for the FNO model.
+Unlike DeepONet, FNO utilizes a `DataLoader` for mini-batching across the
+parameter space `N_sigma` natively supported by Lux/Reactant.
 """
-function run_train(model::ModelTypes.DeepONet;
-    data_hash::String,
-    n_epochs::Int=20000,
-    step_x::Int=10,
-    step_t::Int=5,
-    m_sensors::Int=100,
-    p_latent::Int=64,
-    hidden::Int=64,
-)
+function train_fno!(train_state, dataloader; epochs=10000)
+    println("--- Starting FNO Training on Reactant Device ---")
+    println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
 
-    # Configuration and model hash
-    model_type = ModelTypes.get_model_name(model)
-    config = @strdict(
-        model_type,
-        data_hash,
-        n_epochs,
-        step_x,
-        step_t,
-        m_sensors,
-        p_latent,
-        hidden
-    )
+    t_start = time()
+    lr_stage = 1
+
+    Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
+        for epoch in 1:epochs
+            local current_loss = 0.0f0
+
+            # Iterate over the batches in the dataloader
+            for data in dataloader
+                _, loss_val, _, train_state = Training.single_train_step!(
+                    AutoEnzyme(), MSELoss(), data, train_state; return_gradients=Val(false)
+                )
+                current_loss = Float32(loss_val)
+            end
+
+            if current_loss < 1e-7
+                println(">>> Target hit! Early stop at epoch $epoch! <<<")
+                break
+            elseif current_loss < 7.5e-7 && lr_stage == 4
+                println(">>> Epoch $epoch: Cut LR to 0.00001 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.00001f0)
+                lr_stage = 5
+            elseif current_loss < 1.5e-6 && lr_stage == 3
+                println(">>> Epoch $epoch: Cut LR to 0.00005 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.00005f0)
+                lr_stage = 4
+            elseif current_loss < 3e-6 && lr_stage == 2
+                println(">>> Epoch $epoch: Cut LR to 0.0001 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.0001f0)
+                lr_stage = 3
+            elseif current_loss < 8.2e-6 && lr_stage == 1
+                println(">>> Epoch $epoch: Cut LR to 0.0005 <<<")
+                Optimisers.adjust!(train_state.optimizer_state, 0.0005f0)
+                lr_stage = 2
+            end
+
+            if epoch == 1
+                t_compiled = time()
+                comp_time = round((t_compiled - t_start) / 60, digits=2)
+                println(">>> Compilation and 1st Epoch finished in $comp_time minutes. Fast training start... <<<")
+                println("Epoch: $epoch \t Loss: $current_loss")
+            elseif epoch % 500 == 0
+                println("Epoch: $epoch \t Loss: $current_loss")
+            end
+        end
+    end
+
+    t_end = time()
+    total_mins = round((t_end - t_start) / 60, digits=2)
+    println("--- FNO Training Completed in $total_mins minutes ---")
+
+    return train_state.parameters, train_state.states
+end
+
+# ------------- ORCHESTRATOR ----------------
+
+"""
+    execute_train_pipeline(model::AbstractNeuralModel, config::Dict)
+
+Internal core function. Handles cache validation, loading the High-Fidelity dataset,
+triggering the specialized training dispatch (via `prepare_and_train`), and saving
+the resulting weights to disk.
+
+# Arguments
+- `model`: An instance of a concrete neural model type (e.g., `DeepONet()`).
+- `config::Dict`: A complete dictionary containing all hyperparameters, including defaults,
+  to guarantee deterministic and collision-free SHA-256 hashing.
+
+# Returns
+- `model_hash::String`: The unique hash identifier of the trained model.
+"""
+function execute_train_pipeline(model::ModelTypes.AbstractNeuralModel, config::Dict)
+    model_type = config["model_type"]
+    data_hash = config["data_hash"]
+
+    # Generate deterministic hash from the fully populated config
     model_hash = HashRegistry.config_hash(config)
     weights_path = datadir("models", lowercase(model_type), "model_$(model_hash).jld2")
 
@@ -143,13 +187,54 @@ function run_train(model::ModelTypes.DeepONet;
         error("Required data hash [$data_hash] not found! Run generation first.")
     end
 
+    fem_data = load(data_path)
 
-    fem_data = load(data_path)              # Returns a dict
+    # Delegate to specialized Dispatch
+    ps_cpu, st_cpu, max_u = prepare_and_train(model, fem_data, config)
+
+    # Save Model Weights and Update Registry
+    mkpath(datadir("models", lowercase(model_type)))
+    jldsave(weights_path; ps=ps_cpu, st=st_cpu, max_u=max_u)
+    HashRegistry.update_registry!("models", model_hash, config)
+
+    println("Model weights saved to $weights_path")
+    println("$(model_type) integration script finished successfully")
+
+    return model_hash
+end
+
+
+# --------------- SPECIALIZED DISPATCH ------------------
+"""
+    prepare_and_train(model::DeepONet, fem_data::Dict, config::Dict)
+
+Specialized dispatch for formatting High-Fidelity Data into DeepONet's Branch/Trunk
+structure, initializing the architecture on the appropriate hardware device, and
+executing the training loop.
+
+# Arguments
+- `model`: The `DeepONet` struct acting as a dispatch target.
+- `fem_data::Dict`: The loaded High-Fidelity dataset containing snapshots and grids.
+- `config::Dict`: Hyperparameters required for network initialization and slicing.
+
+# Returns
+- Tuple containing: `(ps_cpu, st_cpu, max_u)` safely moved back to RAM.
+"""
+function prepare_and_train(model::ModelTypes.DeepONet, fem_data::Dict, config::Dict)
+    # Extract structural configs
+    n_epochs = config["n_epochs"]
+    step_x = config["step_x"]
+    step_t = config["step_t"]
+    m_sensors = config["m_sensors"]
+    p_latent = config["p_latent"]
+    hidden = config["hidden"]
+
+    # Extract FEM Data
     snapshots = fem_data["snapshots"]       # Shape: (N_dofs, N_sigma, N_time)
-    x_grid = fem_data["x_grid"]             # Spatial DoFs
-    t_grid = fem_data["t_grid"]             # Time steps
-    σ_values = fem_data["sigma_values"]     # Sigma parameters
-    fem_config = fem_data["config"]             # Extract config to get physical domain L
+    x_grid = fem_data["x_grid"]
+    t_grid = fem_data["t_grid"]
+    σ_values = fem_data["sigma_values"]
+    fem_config = fem_data["config"]         # Extract config to get physical domain L
 
     N_x_full, N_sigma, N_t_full = size(snapshots)
     println("Loaded FEM Snapshots: $N_x_full spatial DoFs, $N_t_full time steps, $N_sigma parameters.")
@@ -211,22 +296,18 @@ function run_train(model::ModelTypes.DeepONet;
     println("Target Output (u_train): $(size(u_train)) \t-->\t (N_points, N_sigma)")
     println("==============================\n")
 
-
-    # Device Setup and XLA Compilation (Reactant.jl)
-    xdev = reactant_device(; force=true)
-    cdev = cpu_device()
-
-    rng = Random.default_rng()
-    Random.seed!(rng, 42)
-    ps, st = Lux.setup(rng, deepONet) |> xdev
-
-    # Move data to XLA device
-    f_data = f_train |> xdev
-    x_data = x_train |> xdev
-    u_data = u_train |> xdev
+    # Move data to XLA device using global variables
+    f_data = f_train |> XDEV
+    x_data = x_train |> XDEV
+    u_data = u_train |> XDEV
     train_data = ((f_data, x_data), u_data)
 
-    # Training Loop
+    # Setup Architecture State
+    rng = Random.default_rng()
+    Random.seed!(rng, 42)
+    ps, st = Lux.setup(rng, deepONet) |> XDEV
+
+    # Training Loop Initialization
     println("\n--- Initializing Optimizer and TrainState ---")
     opt = Adam(0.001f0)
     train_state = Training.TrainState(deepONet, ps, st, opt)
@@ -237,19 +318,192 @@ function run_train(model::ModelTypes.DeepONet;
         epochs=n_epochs
     )
 
-    # Save Model Weights
-    mkpath(datadir("models", lowercase(model_type)))
+    # Move parameters back to CPU before returning for reliable serialization
+    ps_cpu = ps_trained |> CDEV
+    st_cpu = st_trained |> CDEV
 
-    # Move parameters back to CPU before saving
-    ps_cpu = ps_trained |> cdev
-    st_cpu = st_trained |> cdev
-    jldsave(weights_path; ps=ps_cpu, st=st_cpu, max_u=max_u)
-    HashRegistry.update_registry!("models", model_hash, config)
+    return ps_cpu, st_cpu, Float32(max_u)
+end
 
-    println("Model weights saved to $weights_path")
-    println("DeepONet integration script finished successfully")
+"""
+    prepare_and_train(model::FNO, fem_data::Dict, config::Dict)
 
-    return model_hash
+Specialized dispatch for formatting High-Fidelity Data into FNO's multi-channel
+tensor structure `(N_x, in/out_channels, batch)`.
+Initializes a `DataLoader` for batch processing on the Reactant device.
+"""
+function prepare_and_train(model::ModelTypes.FNO, fem_data::Dict, config::Dict)
+    n_epochs = config["n_epochs"]
+    nx_red = config["nx_red"]
+    nt_red = config["nt_red"]
+    hidden_channels = config["hidden_channels"]
+    modes = config["modes"]
+
+    snapshots = fem_data["snapshots"]
+    x_grid = fem_data["x_grid"]
+    t_grid = fem_data["t_grid"]
+    σ_values = fem_data["sigma_values"]
+
+    N_x_full, N_sigma, N_t_full = size(snapshots)
+    println("Loaded FEM Snapshots: $N_x_full spatial DoFs, $N_t_full time steps, $N_sigma parameters.")
+
+    # Data Reduction
+    idx_x = round.(Int, range(1, N_x_full, length=nx_red))
+    idx_t = round.(Int, range(1, N_t_full, length=nt_red))
+    x_red = x_grid[idx_x]
+    t_red = t_grid[idx_t]
+    N_x_red = length(x_red)
+    N_t_red = length(t_red)
+
+    println("Reduced FNO grid: $N_x_red spatial nodes (optimal for FFT if 2^n), predicting $N_t_red time steps.")
+
+    # Tensor initialization shape: (grid_size, in/out_channels, batch_size)
+    u_in = zeros(Float32, N_x_red, 1, N_sigma)
+    u_out = zeros(Float32, N_x_red, N_t_red, N_sigma)
+
+    pi_f32 = Float32(π)
+    for i in 1:N_sigma
+        σ_val = σ_values[i][1]
+        u₀(x) = (1.0f0 / √(2.0f0 * pi_f32 * σ_val)) * exp(-x^2 / (2.0f0 * σ_val))
+
+        u_in[:, 1, i] .= Float32.(u₀.(x_red))
+        u_out[:, :, i] .= Float32.(snapshots[idx_x, i, idx_t])
+    end
+
+    max_u = maximum(abs.(u_out))
+    u_in ./= max_u
+    u_out ./= max_u
+
+    println("\n=== FNO Tensor Shapes ===")
+    println("Input (u_in):   $(size(u_in)) \t --> (N_x_red, 1_channel, N_sigma)")
+    println("Target (u_out): $(size(u_out)) \t --> (N_x_red, N_t_red, N_sigma)")
+    println("=========================\n")
+
+    # Architecture Initialization
+    fno = FNOArch.build_fno(
+        in_channels=1,
+        out_channels=N_t_red,
+        hidden_channels=hidden_channels,
+        modes=modes
+    )
+
+    # DataLoader setup on Device
+    # Full batch (batchsize=N_sigma) is used as per the notebook
+    dataloader = DataLoader((u_in, u_out); batchsize=N_sigma, shuffle=true) |> XDEV
+
+    rng = Random.default_rng()
+    Random.seed!(rng, 42)
+    ps, st = Lux.setup(rng, fno) |> XDEV
+
+    println("\n--- Initializing Optimizer and TrainState ---")
+    opt = Adam(0.001f0)
+    train_state = Training.TrainState(fno, ps, st, opt)
+
+    @time ps_trained, st_trained = train_fno!(train_state, dataloader; epochs=n_epochs)
+
+    ps_cpu = ps_trained |> CDEV
+    st_cpu = st_trained |> CDEV
+
+    return ps_cpu, st_cpu, Float32(max_u)
+end
+
+# ------------------ PUBLIC API --------------------------
+
+"""
+    run_train(model::DeepONet; data_hash::String, kwargs...)
+
+Loads pre-computed High-Fidelity FEM snapshots using the provided `data_hash`,
+formats them into Branch (sensors) and Trunk (coordinates) inputs, and orchestrates
+the DeepONet training loop via XLA (Reactant.jl).
+
+# Required Arguments
+- `data_hash::String`: The 12-character SHA-256 hash of the source FEM dataset.
+
+# Keyword Arguments
+- `n_epochs::Int=20000`: Total training epochs.
+- `step_x::Int=10`: Spatial subsampling step (reduces grid size).
+- `step_t::Int=5`: Temporal subsampling step.
+- `m_sensors::Int=100`: Number of input sensors for the Branch Net.
+- `p_latent::Int=64`: Dimensionality of the latent space (output of Branch/Trunk).
+- `hidden::Int=64`: Number of neurons per hidden layer in the MLPs.
+
+# Output
+- Saves the trained model weights to `data/models/deeponet/model_<model_hash>.jld2`.
+- Updates `data/registry.json` under the "models" category.
+- **Returns:** `model_hash::String` to be passed to evaluation scripts.
+"""
+function run_train(model::ModelTypes.DeepONet;
+    data_hash::String,
+    n_epochs::Int=20000,
+    step_x::Int=10,
+    step_t::Int=5,
+    m_sensors::Int=100,
+    p_latent::Int=64,
+    hidden::Int=64,
+)
+    # The configuration dict now explicitly captures all defaults ensuring safe hashing
+    model_type = ModelTypes.get_model_name(model)
+    config = @strdict(
+        model_type,
+        data_hash,
+        n_epochs,
+        step_x,
+        step_t,
+        m_sensors,
+        p_latent,
+        hidden
+    )
+
+    # Pass the fully populated dictionary to the I/O handler
+    return execute_train_pipeline(model, config)
+end
+
+"""
+    run_train(model::FNO; data_hash::String, kwargs...)
+
+Loads pre-computed High-Fidelity FEM snapshots using the provided `data_hash`,
+formats them into a multi-channel tensor, and orchestrates the Fourier Neural
+Operator (FNO) training loop via XLA (Reactant.jl).
+
+# Required Arguments
+- `data_hash::String`: The 12-character SHA-256 hash of the source FEM dataset.
+
+# Keyword Arguments
+- `n_epochs::Int=10000`: Total training epochs.
+- `nx_red::Int=256`: Number of spatial nodes to extract from the full FEM grid.
+  For optimal Fast Fourier Transform (FFT) performance, it is highly recommended
+  to use powers of 2 (e.g., 64, 128, 256, 512).
+- `nt_red::Int=50`: Number of temporal steps to extract. Represents the output
+  channels of the operator.
+- `hidden_channels::Tuple=(64, 64, 128)`: Number of channels in the hidden Fourier layers.
+- `modes::Tuple=(32,)`: Number of lower-frequency Fourier modes to retain. Must be
+  strictly less than `nx_red ÷ 2`.
+
+# Output
+- Saves the trained model weights to `data/models/fno/model_<model_hash>.jld2`.
+- Updates `data/registry.json` under the "models" category.
+- **Returns:** `model_hash::String` to be passed to evaluation scripts.
+"""
+function run_train(model::ModelTypes.FNO;
+    data_hash::String,
+    n_epochs::Int=20000,
+    nx_red::Int=256,
+    nt_red::Int=50,
+    hidden_channels::Tuple=(64, 64, 128),
+    modes::Tuple=(32,)
+)
+    model_type = ModelTypes.get_model_name(model)
+    config = @strdict(
+        model_type,
+        data_hash,
+        n_epochs,
+        nx_red,
+        nt_red,
+        hidden_channels,
+        modes
+    )
+
+    return execute_train_pipeline(model, config)
 end
 
 # Executed only when run from bash terminal
@@ -259,5 +513,5 @@ if abspath(PROGRAM_FILE) == @__FILE__
     sx_val = length(ARGS) > 1 ? parse(Int, ARGS[2]) : 10
     st_val = length(ARGS) > 2 ? parse(Int, ARGS[3]) : 5
 
-    run_train(ModelTypes.DeepONet(); n_epochs=e_val, step_x=sx_val, step_t=st_val)
+    run_train(ModelTypes.DeepONet(); data_hash="hash", n_epochs=e_val, step_x=sx_val, step_t=st_val)
 end

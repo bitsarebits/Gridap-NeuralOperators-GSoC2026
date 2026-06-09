@@ -5,6 +5,8 @@ include("generate_data.jl")
 include("train_model.jl")
 include("plot_model.jl")
 
+using experiments_NeuralOperators.ModelTypes
+
 # Helper function to filter out `nothing` values before passing kwargs
 filter_kwargs(kwargs_dict) = Dict{Symbol,Any}(k => v for (k, v) in kwargs_dict if !isnothing(v))
 
@@ -26,8 +28,8 @@ for easy experimentation via the REPL.
 Executes the full chain and prints the resulting `data_hash`, `model_hash`,
 and `eval_hash` to the standard output.
 """
-function run_pipeline(model::ModelTypes.AbstractNeuralModel=ModelTypes.DeepONet();
-    # Generation Parameters (Optional)
+function run_pipeline(model::AbstractNeuralModel=DeepONet();
+    # Generation Parameters
     beta_start::Union{Float64,Nothing}=nothing,
     beta_end::Union{Float64,Nothing}=nothing,
     beta_step::Union{Float64,Nothing}=nothing,
@@ -40,20 +42,28 @@ function run_pipeline(model::ModelTypes.AbstractNeuralModel=ModelTypes.DeepONet(
     c::Union{Float64,Nothing}=nothing,
     theta::Union{Float64,Nothing}=nothing,
 
-    # Training Parameters (Optional)
+    # Training Parameters (DeepONet)
     epochs::Union{Int,Nothing}=nothing,
     step_x::Union{Int,Nothing}=nothing,
     step_t::Union{Int,Nothing}=nothing,
 
-    # Architecture Parameters (Shared, Optional)
+    # Architecture Parameters (DeepONet)
     m_sensors::Union{Int,Nothing}=nothing,
     p_latent::Union{Int,Nothing}=nothing,
     hidden::Union{Int,Nothing}=nothing,
 
-    # Evaluation Parameter (Optional)
+    # Training Parameters (FNO)
+    nx_red::Union{Int,Nothing}=nothing,
+    nt_red::Union{Int,Nothing}=nothing,
+
+    # Architecture Parameters (FNO)
+    hidden_channels::Union{Tuple,Nothing}=nothing,
+    modes::Union{Tuple,Nothing}=nothing,
+
+    # Evaluation Parameter
     sigma_test::Union{Float64,Nothing}=nothing
 )
-    model_name_str = ModelTypes.get_model_name(model)
+    model_name_str = get_model_name(model)
     println("=====================================================")
     println("STARTING END-TO-END PIPELINE FOR: $(model_name_str)")
     println("=====================================================")
@@ -78,11 +88,17 @@ function run_pipeline(model::ModelTypes.AbstractNeuralModel=ModelTypes.DeepONet(
     train_kwargs = filter_kwargs(Dict(
         :data_hash => data_hash,
         :n_epochs => epochs,
+        # DeepONet
         :step_x => step_x,
         :step_t => step_t,
         :m_sensors => m_sensors,
         :p_latent => p_latent,
-        :hidden => hidden
+        :hidden => hidden,
+        # FNO
+        :nx_red => nx_red,
+        :nt_red => nt_red,
+        :hidden_channels => hidden_channels,
+        :modes => modes
     ))
     model_hash = run_train(model; train_kwargs...)
 
@@ -107,7 +123,7 @@ if abspath(PROGRAM_FILE) == @__FILE__
     # Terminal usage: julia run_all_models.jl [model_type] [epochs] [test_sigma]
 
     # Model (Default: DeepONet)
-    model_instance = ModelTypes.DeepONet()
+    model_instance = DeepONet()
     if length(ARGS) > 0
         m_str = lowercase(ARGS[1])
         if m_str == "fno"
@@ -115,7 +131,7 @@ if abspath(PROGRAM_FILE) == @__FILE__
         elseif m_str == "nomad"
             model_instance = NOMAD()
         elseif m_str == "deeponet"
-            model_instance = ModelTypes.DeepONet()
+            model_instance = DeepONet()
         else
             println("Unknown model '$m_str' passed from terminal. Defaulting to DeepONet.")
         end
