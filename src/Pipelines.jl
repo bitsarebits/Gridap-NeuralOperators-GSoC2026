@@ -141,68 +141,86 @@ function execute_plot_pipeline(model::ModelTypes.AbstractNeuralModel, config::Ab
 
     # Plotting Generation
     println("Preparing the plot...")
-    AoG = AlgebraOfGraphics
-    AoG.set_aog_theme!()
 
-    N_x_full = length(fem_data["x_grid"])
     N_t_plot = length(t_grid_pred)
-
-    # Select start, middle, and end frames of the network's prediction
     t_indices = [1, div(N_t_plot, 2), N_t_plot]
-    results, abs_errors, x_vals, x_vals2 = Float32[], Float32[], Float32[], Float32[]
-    labels, alphas, alphas2 = String[], String[], String[]
 
-    for idx in t_indices
+    # figure generation
+    fig = Figure(; size=(1200, 800))
+
+    # Title creation
+    speedup = round(t_fem / max(t_nn, 1e-6), digits=1)
+    fig_title = "$model_type vs High-Fidelity FEM (Zero-Shot) | σ = $sigma_test | Grid: $(length(fem_data["x_grid"])) × $(N_t_plot) | Speedup: $(speedup)x"
+    Label(fig[0, 1:3], fig_title, fontsize=24, font=:bold)
+
+    # Lists for the axis
+    axs_top = Axis[]
+    axs_bot = Axis[]
+
+    for (i, idx) in enumerate(t_indices)
         t_val = t_grid_pred[idx]
 
-        # Robust mapping: Find the closest true HF timeframe regardless of ML subsampling
+        # mapping to find the closest HF frame
         idx_true = argmin(abs.(fem_data["t_grid"] .- t_val))
         u_true = Float32.(x_hf_raw[:, idx_true])
-
         u_pred = vec(u_pred_matrix[:, idx])
 
+        # Errors
+        abs_err = abs.(u_pred .- u_true)
         l2_error = sqrt(mean(abs2, u_pred .- u_true))
         rel_error = (l2_error / max(sqrt(mean(abs2, u_true)), 1e-8)) * 100
+
         text_label = "t = $(round(t_val, digits=2))\n(Err: $(round(rel_error, digits=2))%)"
 
-        append!(results, u_true)
-        append!(labels, repeat(["High-Fidelity"], N_x_full))
+        # first row (u_true vs u_pred)
+        ax_top = Axis(fig[1, i],
+            title=text_label, titlesize=18,
+            ylabel=i == 1 ? L"u(x, t)" : "",
+            ylabelsize=22, xticklabelsize=16, yticklabelsize=16
+        )
+        push!(axs_top, ax_top)
 
-        append!(results, u_pred)
-        append!(labels, repeat([model_type], N_x_full))
+        lines!(ax_top, fem_data["x_grid"], u_true, label="High-Fidelity", color=:orange, linewidth=4)
+        lines!(ax_top, fem_data["x_grid"], u_pred, label=model_type, color=:blue, linestyle=:dash, linewidth=4)
 
-        append!(x_vals, repeat(Float32.(fem_data["x_grid"]), 2))
-        append!(alphas, repeat([text_label], N_x_full * 2))
+        if i > 1
+            hideydecorations!(ax_top, grid=false)
+        end
 
-        append!(abs_errors, abs.(u_pred .- u_true))
-        append!(x_vals2, Float32.(fem_data["x_grid"]))
-        append!(alphas2, repeat([text_label], N_x_full))
+        # Second row (error)
+        ax_bot = Axis(fig[2, i],
+            xlabel=L"x",
+            ylabel=i == 1 ? L"|u_{\text{pred}} - u_{\text{HF}}|" : "",
+            xlabelsize=22, ylabelsize=22, xticklabelsize=16, yticklabelsize=16
+        )
+        push!(axs_bot, ax_bot)
+
+        lines!(ax_bot, fem_data["x_grid"], abs_err, color=:green, linewidth=4)
+
+        if i > 1
+            hideydecorations!(ax_bot, grid=false)
+        end
     end
 
-    plot_data = (; results, abs_errors, x_vals, alphas, labels, x_vals2, alphas2)
+    # Axes syncronization
+    linkyaxes!(axs_top...)
+    linkyaxes!(axs_bot...)
+    linkxaxes!(axs_top..., axs_bot...)
 
-    fig = Figure(; size=(1024, 512), title="$model_type vs HF (σ = $sigma_test)", titlesize=25)
-    axis_common = (; xlabelsize=20, ylabelsize=20, titlesize=20, xticklabelsize=20, yticklabelsize=20)
+    #= Hide x axe on the first row
+    for ax in axs_top
+        hidexdecorations!(ax, grid=false)
+    end=#
 
-    axs1 = draw!(
-        fig[1, 1],
-        AoG.data(plot_data) *
-        mapping(:x_vals => L"x", :results => L"u(x, t)"; color=:labels => "", col=:alphas => "", linestyle=:labels => "") *
-        visual(Lines; linewidth=4),
-        scales(; Color=(; palette=[:orange, :blue]), LineStyle=(; palette=[:solid, :dash]));
-        axis=merge(axis_common, (; xlabel=""))
-    )
-    for ax in axs1
-        hidexdecorations!(ax; grid=false)
-    end
-    axislegend(axs1[1, 1].axis, [LineElement(; linestyle=:solid, color=:orange), LineElement(; linestyle=:dash, color=:blue)], ["High-Fidelity", model_type], position=:lt)
+    # Add legends
+    axislegend(axs_top[1], position=:lt, labelsize=18)
 
-    axs2 = draw!(
-        fig[2, 1],
-        AoG.data(plot_data) * mapping(:x_vals2 => L"x", :abs_errors => L"|u_{pred} - u_{true}|"; col=:alphas2 => "") * visual(Lines; linewidth=4, color=:green);
-        axis=merge(axis_common, (; titlevisible=false))
-    )
+    # Layout and spaces
+    rowgap!(fig.layout, 1, 15) # Space under the title
+    rowgap!(fig.layout, 2, 10)
+    colgap!(fig.layout, 15)
 
+    # Storing
     mkpath(plotsdir(lowercase(model_type)))
     save(save_path, fig)
     HashRegistry.update_registry!("evaluations", eval_hash, config)
