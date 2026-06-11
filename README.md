@@ -2,6 +2,25 @@
 
 This subfolder contains the Julia scripts to test the interaction between `NeuralOperators.jl` and `GridapROMs.jl` for High-Fidelity FEM data generation, model training, and zero-shot evaluation. The workflow is managed using `DrWatson.jl` for strict reproducibility and SHA-256 caching.
 
+## Physical Problem: 1D Linear Transport
+
+We consider the one-dimensional linear transport equation (reference: *Reduced Basis Methods for Partial Differential Equations*, Quarteroni):
+
+$$
+\partial_t u(x,t) + c \partial_x u(x,t) = 0, \quad (x,t) \in \mathbb{R} \times (0,t_f)
+$$
+$$
+u(x,0) = u_0(x), \quad x \in \mathbb{R}
+$$
+
+The exact solution is a traveling wave $u(x,t) = u_0(x - ct)$. By default, the scripts use a wave speed of $c = 1.0$ and a final simulation time $t_f = 1.0$ (both can be adjusted via kwargs). The initial condition is defined as a Gaussian pulse:
+
+$$
+u_0(x) = \frac{1}{\sqrt{2\pi\sigma}} e^{-x^2 / 2\sigma}
+$$
+
+The primary physical parameter of interest is the variance $\sigma$, which we express in the form $\sigma = 10^{-\beta}$. In the simulations, $\beta$ acts as the variable parameter used to generate different snapshots and define the parameter space for training and evaluating the models.
+
 ## Initial Setup
 
 Before running the scripts for the first time, instantiate the environment:
@@ -27,7 +46,7 @@ run_pipeline(FNO(); nx_red=256, nt_red=50, epochs=10000)
 #### From the Terminal
 For quick execution:
 
-```Bash
+```bash
 # Usage: julia scripts/run_all_models.jl [model_type] [epochs] [sigma_test]
 julia scripts/run_all_models.jl fno 10000 0.03
 ```
