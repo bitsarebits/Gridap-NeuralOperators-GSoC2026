@@ -2,6 +2,7 @@ module DataGeneration
 
 using Gridap
 using GridapROMs
+using GridapROMs.ParamDataStructures
 
 export generate_fem_snapshots
 
@@ -61,6 +62,8 @@ function generate_fem_snapshots(
 
     # Finite Element Spaces
     reffe = ReferenceFE(lagrangian, Float64, order)
+    # This would be the correct way to define the FE space, but the solve crashes in GridapROMs...
+    # V = OrderedFESpace(model, reffe; vector_type=Vector{Float32})
     V = OrderedFESpace(model, reffe)
     U = TransientTrialParamFESpace(V, uₚₜ)
 
@@ -69,15 +72,11 @@ function generate_fem_snapshots(
     dΩ = Measure(τₕ, degree)
 
     # Weak form definition
-    m(σ, t, du, v, dΩ) = ∫(v * du)dΩ
-    a(σ, t, u, v, dΩ) = ∫(v * (c_vec ⋅ ∇(u)))dΩ
-    r(σ, t, u, v, dΩ) = m(σ, t, ∂t(u), v, dΩ) + a(σ, t, u, v, dΩ)
+    m(σ, t, du, v) = ∫(v * du)dΩ
+    a(σ, t, u, v) = ∫(v * (c_vec ⋅ ∇(u)))dΩ
+    r(σ, t, u, v) = m(σ, t, ∂t(u), v) + a(σ, t, u, v)
 
-    τₕ_a = (τₕ,)
-    τₕ_m = (τₕ,)
-    τₕ_r = (τₕ,)
-    domains = FEDomains(τₕ_r, (τₕ_a, τₕ_m))
-    feop = TransientLinearParamOperator(r, (a, m), D, U, V, domains)
+    feop = TransientLinearParamOperator(r, (a, m), D, U, V)
 
     # Solving Phase (High-Fidelity)
     uh₀ₚ(σ) = interpolate_everywhere(u₀ₚ(σ), U(σ, t0))
@@ -90,16 +89,16 @@ function generate_fem_snapshots(
 
     # Convert the GridapROMs custom type into a standard Julia 3D Array
     # This prevents JLD2 type-reconstruction errors during loading
-    x_snapshots = Array(x_snapshots_raw)
+    x_snapshots = get_all_data(x_snapshots_raw)
 
     # Extracting the spatial grid for downstream neural operators
-    coord_x(x_val) = Float32(x_val[1])
+    coord_x(x_val) = x_val[1]
     x_fe_function = interpolate_everywhere(coord_x, V)
 
     # Cast matrices and vectors to Float32 for the training
-    x_snapshots = Float32.(Array(x_snapshots_raw))
+    x_snapshots = Float32.(x_snapshots_raw)
     x_grid = Float32.(get_free_dof_values(x_fe_function))
-    t_grid = Float32.(collect(tdomain[2:end]))
+    t_grid = Float32.(tdomain[2:end])
 
     return (
         snapshots=x_snapshots,
