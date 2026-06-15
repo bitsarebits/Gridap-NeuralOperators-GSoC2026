@@ -91,6 +91,10 @@ function generate_fem_snapshots(
     # This prevents JLD2 type-reconstruction errors during loading
     x_snapshots = get_all_data(x_snapshots_raw)
 
+    #TODO This is a little hacky, it works as the test case is 1D. For now, it works. 
+    # In future, you should consider the following:
+    # x_grid = get_node_coordinates(τₕ) # typeof(x_grid) == Vector{VectorValue{D,Float64}} for D-dimensional problems
+
     # Extracting the spatial grid for downstream neural operators
     coord_x(x_val) = x_val[1]
     x_fe_function = interpolate_everywhere(coord_x, V)
