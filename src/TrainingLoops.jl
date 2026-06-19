@@ -1,9 +1,11 @@
 module TrainingLoops
 
-using Lux, Reactant, Enzyme, Optimisers, Random, Statistics, MLUtils, NeuralOperators
+using Lux, Reactant, Enzyme, Optimisers, Random, Statistics, MLUtils
 
 # Custom modules
 using ..ModelTypes, ..DeepONetArch, ..FNOArch, ..Utils
+
+include("LRSchedulers.jl")
 
 export train_deeponet!, train_fno!, prepare_and_train
 
@@ -20,6 +22,7 @@ which usually takes a few minutes. After that epochs will be extremely fast.
 # Arguments
 - `train_state`: already initialized `TrainState`.
 - `data`: A tuple containing the formatted training data `((f_data, x_data), u_data)`.
+- `lr_scheduler`: An instantiated scheduler (e.g., `CosineAnnealing`) to dynamically adjust the learning rate.
 
 # Keyword Arguments
 - `epochs::Int=5000`: Number of training epochs. Default is set low for fast demonstration.
@@ -28,13 +31,11 @@ which usually takes a few minutes. After that epochs will be extremely fast.
 - `ps`: Trained model parameters.
 - `st`: Updated model states.
 """
-function train_deeponet!(train_state, data; epochs=5000)
+function train_deeponet!(train_state, data, lr_scheduler; epochs=5000)
     println("--- Starting Training on Reactant Device ---")
     println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
 
     t_start = time()
-    lr_stage = 1
-
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
             _, loss, _, train_state = Training.single_train_step!(
@@ -43,19 +44,8 @@ function train_deeponet!(train_state, data; epochs=5000)
 
             current_loss = Float32(loss)
 
-            if current_loss < 1e-4 && lr_stage == 1
-                println(">>> Epoch $epoch: Loss < 1e-4. Cutting LR to 0.0005 <<<")
-                Optimisers.adjust!(train_state.optimizer_state, 0.0005f0)
-                lr_stage = 2
-            elseif current_loss < 5e-5 && lr_stage == 2
-                println(">>> Epoch $epoch: Loss < 5e-5. Cutting LR to 0.0001 <<<")
-                Optimisers.adjust!(train_state.optimizer_state, 0.0001f0)
-                lr_stage = 3
-            elseif current_loss < 2.3e-5 && lr_stage == 3
-                println(">>> Epoch $epoch: Loss < 2.3e-5. Cutting LR to 0.00001 <<<")
-                Optimisers.adjust!(train_state.optimizer_state, 0.00001f0)
-                lr_stage = 4
-            end
+            # LR scheduling
+            step_scheduler!(lr_scheduler, train_state.optimizer_state, epoch, current_loss)
 
             if epoch == 1
                 t_compiled = time()
@@ -83,12 +73,11 @@ Executes the training loop for the FNO model.
 Unlike DeepONet, FNO utilizes a `DataLoader` for mini-batching across the
 parameter space `N_sigma` natively supported by Lux/Reactant.
 """
-function train_fno!(train_state, dataloader; epochs=10000)
+function train_fno!(train_state, dataloader, lr_scheduler; epochs=10000)
     println("--- Starting FNO Training on Reactant Device ---")
     println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
 
     t_start = time()
-    lr_stage = 1
 
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
@@ -102,26 +91,8 @@ function train_fno!(train_state, dataloader; epochs=10000)
                 current_loss = Float32(loss_val)
             end
 
-            if current_loss < 1e-7
-                println(">>> Target hit! Early stop at epoch $epoch! <<<")
-                break
-            elseif current_loss < 7.5e-7 && lr_stage == 4
-                println(">>> Epoch $epoch: Cut LR to 0.00001 <<<")
-                Optimisers.adjust!(train_state.optimizer_state, 0.00001f0)
-                lr_stage = 5
-            elseif current_loss < 1.5e-6 && lr_stage == 3
-                println(">>> Epoch $epoch: Cut LR to 0.00005 <<<")
-                Optimisers.adjust!(train_state.optimizer_state, 0.00005f0)
-                lr_stage = 4
-            elseif current_loss < 3e-6 && lr_stage == 2
-                println(">>> Epoch $epoch: Cut LR to 0.0001 <<<")
-                Optimisers.adjust!(train_state.optimizer_state, 0.0001f0)
-                lr_stage = 3
-            elseif current_loss < 8.2e-6 && lr_stage == 1
-                println(">>> Epoch $epoch: Cut LR to 0.0005 <<<")
-                Optimisers.adjust!(train_state.optimizer_state, 0.0005f0)
-                lr_stage = 2
-            end
+            # LR scheduling
+            step_scheduler!(lr_scheduler, train_state.optimizer_state, epoch, current_loss)
 
             if epoch == 1
                 t_compiled = time()
@@ -155,11 +126,12 @@ executing the training loop.
 - `model`: The `DeepONet` struct acting as a dispatch target.
 - `fem_data::Dict`: The loaded High-Fidelity dataset containing snapshots and grids.
 - `config::Dict`: Hyperparameters required for network initialization and slicing.
+- `lr_scheduler`: The initialized learning rate scheduler to be passed to the training loop.
 
 # Returns
 - Tuple containing: `(ps_cpu, st_cpu, max_u)` safely moved back to RAM.
 """
-function prepare_and_train(model::ModelTypes.DeepONet, fem_data::Dict, config::Dict)
+function prepare_and_train(model::ModelTypes.DeepONet, fem_data::Dict, config::Dict, lr_scheduler)
     # Extract structural configs
     n_epochs = config["n_epochs"]
     step_x = config["step_x"]
@@ -253,7 +225,7 @@ function prepare_and_train(model::ModelTypes.DeepONet, fem_data::Dict, config::D
 
     # @time shows how long the compilation + execution took
     @time ps_trained, st_trained = train_deeponet!(
-        train_state, train_data;
+        train_state, train_data, lr_scheduler;
         epochs=n_epochs
     )
 
@@ -271,7 +243,7 @@ Specialized dispatch for formatting High-Fidelity Data into FNO's multi-channel
 tensor structure `(N_x, in/out_channels, batch)`.
 Initializes a `DataLoader` for batch processing on the Reactant device.
 """
-function prepare_and_train(model::ModelTypes.FNO, fem_data::Dict, config::Dict)
+function prepare_and_train(model::ModelTypes.FNO, fem_data::Dict, config::Dict, lr_scheduler)
     n_epochs = config["n_epochs"]
     nx_red = config["nx_red"]
     nt_red = config["nt_red"]
@@ -338,7 +310,7 @@ function prepare_and_train(model::ModelTypes.FNO, fem_data::Dict, config::Dict)
     opt = Adam(0.001f0)
     train_state = Training.TrainState(fno, ps, st, opt)
 
-    @time ps_trained, st_trained = train_fno!(train_state, dataloader; epochs=n_epochs)
+    @time ps_trained, st_trained = train_fno!(train_state, dataloader, lr_scheduler; epochs=n_epochs)
 
     ps_cpu = ps_trained |> CDEV
     st_cpu = st_trained |> CDEV

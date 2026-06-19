@@ -60,6 +60,9 @@ function run_pipeline(model::AbstractNeuralModel=DeepONet();
     hidden_channels::Union{Tuple,Nothing}=nothing,
     modes::Union{Tuple,Nothing}=nothing,
 
+    # Scheduler
+    lr_scheduler::Union{AbstractLRScheduler,Type{<:AbstractLRScheduler},Nothing}=nothing,
+
     # Evaluation Parameter
     sigma_test::Union{Float64,Nothing}=nothing
 )
@@ -98,7 +101,9 @@ function run_pipeline(model::AbstractNeuralModel=DeepONet();
         :nx_red => nx_red,
         :nt_red => nt_red,
         :hidden_channels => hidden_channels,
-        :modes => modes
+        :modes => modes,
+        # Scheduler
+        :lr_scheduler => lr_scheduler,
     ))
     model_hash = run_train(model; train_kwargs...)
 

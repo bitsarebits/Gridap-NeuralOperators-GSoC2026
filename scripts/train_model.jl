@@ -4,6 +4,7 @@ using DrWatson
 # Custom modules
 using experiments_NeuralOperators.Pipelines
 using experiments_NeuralOperators.ModelTypes
+using experiments_NeuralOperators.TrainingLoops
 
 """
     run_train(model::DeepONet; data_hash::String, kwargs...)
@@ -36,9 +37,12 @@ function run_train(model::DeepONet;
     m_sensors::Int=100,
     p_latent::Int=64,
     hidden::Int=64,
+    lr_scheduler::Union{AbstractLRScheduler,Type{<:AbstractLRScheduler}}=CosineAnnealing
 )
     # The configuration dict now explicitly captures all defaults ensuring safe hashing
     model_type = get_model_name(model)
+    concrete_scheduler = init_scheduler(lr_scheduler, n_epochs)
+    scheduler_info = get_scheduler_info(concrete_scheduler)
     config = @strdict(
         model_type,
         data_hash,
@@ -47,11 +51,12 @@ function run_train(model::DeepONet;
         step_t,
         m_sensors,
         p_latent,
-        hidden
+        hidden,
+        scheduler_info
     )
 
     # Pass the fully populated dictionary to the I/O handler
-    return execute_train_pipeline(model, config)
+    return execute_train_pipeline(model, config, concrete_scheduler)
 end
 
 """
@@ -86,9 +91,12 @@ function run_train(model::FNO;
     nx_red::Int=256,
     nt_red::Int=50,
     hidden_channels::Tuple=(64, 64, 128),
-    modes::Tuple=(32,)
+    modes::Tuple=(32,),
+    lr_scheduler::Union{AbstractLRScheduler,Type{<:AbstractLRScheduler}}=CosineAnnealing
 )
     model_type = get_model_name(model)
+    concrete_scheduler = init_scheduler(lr_scheduler, n_epochs)
+    scheduler_info = get_scheduler_info(concrete_scheduler)
     config = @strdict(
         model_type,
         data_hash,
@@ -96,10 +104,11 @@ function run_train(model::FNO;
         nx_red,
         nt_red,
         hidden_channels,
-        modes
+        modes,
+        scheduler_info
     )
 
-    return execute_train_pipeline(model, config)
+    return execute_train_pipeline(model, config, concrete_scheduler)
 end
 
 # Executed only when run from bash terminal

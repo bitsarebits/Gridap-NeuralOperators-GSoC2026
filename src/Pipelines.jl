@@ -8,7 +8,7 @@ using ..TrainingLoops, ..ModelTypes, ..DataGeneration, ..HashRegistry, ..Inferen
 export execute_train_pipeline, execute_plot_pipeline
 
 """
-    execute_train_pipeline(model::AbstractNeuralModel, config::Dict)
+    execute_train_pipeline(model::AbstractNeuralModel, config::Dict, lr_scheduler)
 
 Internal core function. Handles cache validation, loading the High-Fidelity dataset,
 triggering the specialized training dispatch (via `prepare_and_train`), and saving
@@ -18,11 +18,12 @@ the resulting weights to disk.
 - `model`: An instance of a concrete neural model type (e.g., `DeepONet()`).
 - `config::Dict`: A complete dictionary containing all hyperparameters, including defaults,
   to guarantee deterministic and collision-free SHA-256 hashing.
+- `lr_scheduler`: The concrete learning rate scheduler instance to be used during training.
 
 # Returns
 - `model_hash::String`: The unique hash identifier of the trained model.
 """
-function execute_train_pipeline(model::ModelTypes.AbstractNeuralModel, config::Dict)
+function execute_train_pipeline(model::ModelTypes.AbstractNeuralModel, config::Dict, lr_scheduler)
     model_type = config["model_type"]
     data_hash = config["data_hash"]
 
@@ -46,7 +47,7 @@ function execute_train_pipeline(model::ModelTypes.AbstractNeuralModel, config::D
     fem_data = load(data_path)
 
     # Delegate to specialized Dispatch
-    ps_cpu, st_cpu, max_u = prepare_and_train(model, fem_data, config)
+    ps_cpu, st_cpu, max_u = prepare_and_train(model, fem_data, config, lr_scheduler)
 
     # Save Model Weights and Update Registry
     mkpath(datadir("models", lowercase(model_type)))
