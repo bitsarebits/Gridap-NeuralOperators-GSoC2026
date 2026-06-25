@@ -3,7 +3,7 @@ module Pipelines
 using DrWatson, JLD2, AlgebraOfGraphics, CairoMakie, Gridap
 
 # Custom modules
-using ..TrainingLoops, ..ModelTypes, ..DataGeneration, ..HashRegistry, ..Inference, ..Utils
+using ..TrainingLoops, ..Solvers, ..DataGeneration, ..HashRegistry, ..Inference, ..Utils, ..LRSchedulers
 
 export execute_train_pipeline, execute_plot_pipeline
 
@@ -23,13 +23,17 @@ the resulting weights to disk.
 # Returns
 - `model_hash::String`: The unique hash identifier of the trained model.
 """
-function execute_train_pipeline(model::ModelTypes.AbstractNeuralModel, config::Dict, lr_scheduler)
-    model_type = config["model_type"]
-    data_hash = config["data_hash"]
+function execute_train_pipeline(solver::AbstractNeuralSolver, data_hash::String)
+    solver_name = get_solver_name(solver)
 
-    # Generate deterministic hash from the fully populated config
-    model_hash = HashRegistry.config_hash(config)
-    weights_path = datadir("models", lowercase(model_type), "model_$(model_hash).jld2")
+    # Dict for deterministic hash
+    config_dict = Dict(
+        "solver_type" => solver_name,
+        "solver" => HashRegistry.struct_to_dict(solver),
+        "data_hash" => data_hash
+    )
+    model_hash = HashRegistry.config_hash(config_dict)
+    weights_path = datadir("models", lowercase(solver_name), "model_$(model_hash).jld2")
 
     # Cache check
     if HashRegistry.check_registry("models", model_hash) && isfile(weights_path)
@@ -46,16 +50,19 @@ function execute_train_pipeline(model::ModelTypes.AbstractNeuralModel, config::D
 
     fem_data = load(data_path)
 
+    # Get the scheduler from the struct
+    lr_scheduler = init_scheduler(solver.lr_scheduler, solver.epochs)
+
     # Delegate to specialized Dispatch
-    ps_cpu, st_cpu, max_u = prepare_and_train(model, fem_data, config, lr_scheduler)
+    ps_cpu, st_cpu, max_u = prepare_and_train(solver, fem_data, lr_scheduler)
 
     # Save Model Weights and Update Registry
-    mkpath(datadir("models", lowercase(model_type)))
+    mkpath(datadir("models", lowercase(solver_name)))
     jldsave(weights_path; ps=ps_cpu, st=st_cpu, max_u=max_u)
-    HashRegistry.update_registry!("models", model_hash, config)
+    HashRegistry.update_registry!("models", model_hash, config_dict)
 
     println("Model weights saved to $weights_path")
-    println("$(model_type) integration script finished successfully")
+    println("$(solver_name) integration script finished successfully")
 
     return model_hash
 end
@@ -74,14 +81,18 @@ and generating the comparative AlgebraOfGraphics plots.
 # Returns
 - `eval_hash::String`: The unique hash identifier of the evaluation.
 """
-function execute_plot_pipeline(model::ModelTypes.AbstractNeuralModel, config::AbstractDict)
-    model_hash = config["model_hash"]
-    sigma_test = config["sigma_test"]
-    model_type = ModelTypes.get_model_name(model)
+function execute_plot_pipeline(solver::AbstractNeuralSolver, model_hash::String, eval_config::EvalConfig)
+    solver_name = get_solver_name(solver)
+    sigma_test = eval_config.sigma_test
+
+    config_dict = Dict(
+        "model_hash" => model_hash,
+        "eval_config" => HashRegistry.struct_to_dict(eval_config)
+    )
 
     # Cache check
-    eval_hash = HashRegistry.config_hash(config)
-    save_path = plotsdir(lowercase(model_type), "eval_$(eval_hash).png")
+    eval_hash = HashRegistry.config_hash(config_dict)
+    save_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).png")
 
     if HashRegistry.check_registry("evaluations", eval_hash) && isfile(save_path)
         println("Plot already exists for Hash: [$eval_hash]. Check $save_path")
@@ -97,46 +108,38 @@ function execute_plot_pipeline(model::ModelTypes.AbstractNeuralModel, config::Ab
     model_config = registry["models"][model_hash]
     data_hash = model_config["data_hash"]
 
-    println("--- Starting $model_type Zero-Shot Evaluation (Eval Hash: $eval_hash) ---")
+    println("--- Starting $solver_name Zero-Shot Evaluation (Eval Hash: $eval_hash) ---")
     println("Evaluating unseen parameter: σ = $sigma_test")
 
     # Load Dependencies
-    weights_path = datadir("models", lowercase(model_type), "model_$(model_hash).jld2")
+    weights_path = datadir("models", lowercase(solver_name), "model_$(model_hash).jld2")
     weights_data = load(weights_path)
 
     data_path = datadir("sims", "data_$(data_hash).jld2")
     fem_data = load(data_path)
-    fem_config = fem_data["config"]
+
+    # Build the FEMConfig from the dataset dictionary
+    fem_config = FEMConfig(; (Symbol(k) => v for (k, v) in fem_data["config"])...)
 
     # Execute High-Fidelity FEM
     println("\nWARMUP PHASE: Compiling Gridap (This will take a moment)")
-    _ = DataGeneration.generate_fem_snapshots(
-        [[sigma_test]];
-        order=fem_config["order"], L=fem_config["L"], nx=fem_config["nx"],
-        t0=fem_config["t0"], dt=fem_config["dt"], tf=fem_config["tf"],
-        c=fem_config["c"], θ=fem_config["theta"]
-    )
+    _ = DataGeneration.generate_fem_snapshots([[sigma_test]], fem_config)
 
     println("\nBENCHMARK PHASE: Measuring pure FEM execution time...")
     println("Generating High-Fidelity FEM solution for σ = $sigma_test...")
     t_fem = @elapsed begin
-        hf_results = DataGeneration.generate_fem_snapshots(
-            [[sigma_test]];
-            order=fem_config["order"], L=fem_config["L"], nx=fem_config["nx"],
-            t0=fem_config["t0"], dt=fem_config["dt"], tf=fem_config["tf"],
-            c=fem_config["c"], θ=fem_config["theta"]
-        )
+        hf_results = DataGeneration.generate_fem_snapshots([[sigma_test]], fem_config)
     end
     x_hf_raw = hf_results.snapshots[:, 1, :]
 
     # Specialized Neural Inference Dispatch
     u_pred_matrix, t_grid_pred, t_nn = evaluate_and_predict(
-        model, weights_data, fem_data, model_config, sigma_test
+        solver, weights_data, fem_data, sigma_test
     )
 
     println("\n=== BENCHMARK RESULTS (σ = $sigma_test) ===")
     println("FEM Computation Time:  $(round(t_fem, digits=4)) seconds")
-    println("$model_type Inference:    $(round(t_nn, digits=4)) seconds")
+    println("$solver_name Inference:    $(round(t_nn, digits=4)) seconds")
     println("Speedup Factor:        $(round(t_fem / max(t_nn, 1e-6), digits=1))x")
     println("====================================\n")
 
@@ -151,7 +154,7 @@ function execute_plot_pipeline(model::ModelTypes.AbstractNeuralModel, config::Ab
 
     # Title creation
     speedup = round(t_fem / max(t_nn, 1e-6), digits=1)
-    fig_title = "$model_type vs High-Fidelity FEM (Zero-Shot) | σ = $sigma_test | Grid: $(length(fem_data["x_grid"])) × $(N_t_plot) | Speedup: $(speedup)x"
+    fig_title = "$solver_name vs High-Fidelity FEM (Zero-Shot) | σ = $sigma_test | Grid: $(length(fem_data["x_grid"])) × $(N_t_plot) | Speedup: $(speedup)x"
     Label(fig[0, 1:3], fig_title, fontsize=24, font=:bold)
 
     # Lists for the axis
@@ -182,7 +185,7 @@ function execute_plot_pipeline(model::ModelTypes.AbstractNeuralModel, config::Ab
         push!(axs_top, ax_top)
 
         lines!(ax_top, fem_data["x_grid"], u_true, label="High-Fidelity", color=:orange, linewidth=4)
-        lines!(ax_top, fem_data["x_grid"], u_pred, label=model_type, color=:blue, linestyle=:dash, linewidth=4)
+        lines!(ax_top, fem_data["x_grid"], u_pred, label=solver_name, color=:blue, linestyle=:dash, linewidth=4)
 
         if i > 1
             hideydecorations!(ax_top, grid=false)
@@ -222,9 +225,9 @@ function execute_plot_pipeline(model::ModelTypes.AbstractNeuralModel, config::Ab
     colgap!(fig.layout, 15)
 
     # Storing
-    mkpath(plotsdir(lowercase(model_type)))
+    mkpath(plotsdir(lowercase(solver_name)))
     save(save_path, fig)
-    HashRegistry.update_registry!("evaluations", eval_hash, config)
+    HashRegistry.update_registry!("evaluations", eval_hash, config_dict)
 
     println("Evaluation successful! Plot saved to: $save_path")
 

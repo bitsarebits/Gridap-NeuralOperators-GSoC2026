@@ -3,7 +3,7 @@ module Inference
 using Lux, Reactant
 
 # Custom modules
-using ..ModelTypes, ..DeepONetArch, ..FNOArch, ..Utils
+using ..Solvers, ..DeepONetArch, ..FNOArch, ..Utils
 
 export evaluate_and_predict
 
@@ -14,20 +14,22 @@ export evaluate_and_predict
 Specialized dispatch for formatting inputs, compiling XLA graph, and executing
 DeepONet inference.
 """
-function evaluate_and_predict(model::ModelTypes.DeepONet, weights_data::AbstractDict, fem_data::AbstractDict, model_config::AbstractDict, sigma_test::Float64)
+function evaluate_and_predict(solver::DeepONetSolver, weights_data::AbstractDict, fem_data::AbstractDict, sigma_test::Float64)
     fem_config = fem_data["config"]
+    L=fem_config["L"]
+
     x_grid = fem_data["x_grid"]
     t_grid = fem_data["t_grid"]
     N_x = length(x_grid)
     N_t = length(t_grid)
 
-    m_sensors = model_config["m_sensors"]
+    m_sensors = solver.m_sensors
 
     deepONet, x_sensors = DeepONetArch.build_deeponet(
         m_sensors=m_sensors,
-        p_latent=model_config["p_latent"],
-        hidden=model_config["hidden"],
-        L=fem_config["L"]
+        p_latent=solver.p_latent,
+        hidden=solver.hidden,
+        L=L
     )
 
     ps_dev = weights_data["ps"] |> XDEV
@@ -78,32 +80,22 @@ end
 Specialized dispatch for FNO inference. Demonstrates Super-Resolution by
 evaluating on the full physical grid (`N_x_full`) natively.
 """
-function evaluate_and_predict(model::ModelTypes.FNO, weights_data::AbstractDict, fem_data::AbstractDict, model_config::AbstractDict, sigma_test::Float64)
+function evaluate_and_predict(solver::FNOSolver, weights_data::AbstractDict, fem_data::AbstractDict, sigma_test::Float64)
     x_grid = fem_data["x_grid"]
     t_grid = fem_data["t_grid"]
     N_x_full = length(x_grid)
     N_t_full = length(t_grid)
 
     # Calculate time reduction indices to match training shape
-    if haskey(model_config, "nt_red")
-        nt_red = model_config["nt_red"]
-        idx_t = round.(Int, range(1, N_t_full, length=nt_red))
-    else
-        step_t = model_config["step_t"]
-        idx_t = 1:step_t:N_t_full
-        nt_red = length(idx_t)
-    end
+    nt_red = solver.nt_red
+    idx_t = round.(Int, range(1, N_t_full, length=nt_red))
     t_grid_pred = t_grid[idx_t]
-
-    # Convert JSON vectors to Tuple
-    hidden_channels_tuple = Tuple(model_config["hidden_channels"])
-    modes_tuple = Tuple(model_config["modes"])
 
     fno = FNOArch.build_fno(
         in_channels=1,
         out_channels=nt_red,
-        hidden_channels=hidden_channels_tuple,
-        modes=modes_tuple
+        hidden_channels=solver.hidden_channels,
+        modes=solver.modes
     )
 
     ps_dev = weights_data["ps"] |> XDEV

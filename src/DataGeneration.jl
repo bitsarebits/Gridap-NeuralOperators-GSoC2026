@@ -4,6 +4,8 @@ using Gridap
 using GridapROMs
 using GridapROMs.ParamDataStructures
 
+using ..Solvers
+
 export generate_fem_snapshots
 
 """
@@ -31,16 +33,19 @@ Generates High-Fidelity (FEM) snapshots using GridapROMs.jl.
     - `t_grid`: Temporal coordinates corresponding to the snapshots.
 """
 function generate_fem_snapshots(
-    σ_values::Vector{Vector{Float64}};
-    order::Int=3,
-    L::Float64=5.0,
-    nx::Int=1000,
-    t0::Float64=0.0,
-    dt::Float64=0.01,
-    tf::Float64=1.0,
-    c::Float64=1.0,
-    θ::Float64=0.5
+    σ_values::Vector{Vector{Float64}},
+    config::FEMConfig
 )
+    # Extract the parameters from the struct
+    order = config.order
+    L = config.L
+    nx = config.nx
+    t0 = config.t0
+    dt = config.dt
+    tf = config.tf
+    c = config.c
+    θ = config.theta
+
     # Spatial domain setup
     Ω = (-L, L)
     partition = (nx,)
@@ -91,7 +96,7 @@ function generate_fem_snapshots(
     # This prevents JLD2 type-reconstruction errors during loading
     x_snapshots = get_all_data(x_snapshots_raw)
 
-    #TODO This is a little hacky, it works as the test case is 1D. For now, it works. 
+    #TODO This is a little hacky, it works as the test case is 1D. For now, it works.
     # In future, you should consider the following:
     # x_grid = get_node_coordinates(τₕ) # typeof(x_grid) == Vector{VectorValue{D,Float64}} for D-dimensional problems
 

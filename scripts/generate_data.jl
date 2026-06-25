@@ -5,6 +5,10 @@ using JLD2
 using Gridap
 using GridapROMs
 
+using experiments_NeuralOperators.Solvers
+using experiments_NeuralOperators.DataGeneration
+using experiments_NeuralOperators.HashRegistry
+
 """
     run_generate_data(; kwargs...)
 
@@ -33,41 +37,14 @@ acting as an automatic caching mechanism to avoid redundant computations.
 - Updates `data/registry.json` linking the configuration to the generated hash.
 - **Returns:** `data_hash::String` to be passed to downstream modeling scripts.
 """
-function run_generate_data(;
-    beta_start::Float64=1.0,
-    beta_end::Float64=2.0,
-    beta_step::Float64=0.2,
-    order::Int=3,
-    L::Float64=5.0,
-    nx::Int=1000,
-    t0::Float64=0.0,
-    dt::Float64=0.01,
-    tf::Float64=1.0,
-    c::Float64=1.0,
-    theta::Float64=0.5
-)
+function run_generate_data(config::FEMConfig)
 
     # Configuration and Hash
-    n_sigma = length(beta_start:beta_step:beta_end)
-    config = @strdict(
-        beta_start,
-        beta_end,
-        beta_step,
-        n_sigma,
-        order,
-        L,
-        nx,
-        t0,
-        dt,
-        tf,
-        c,
-        theta
-    )
     data_hash = HashRegistry.config_hash(config)
     output_file = datadir("sims", "data_$(data_hash).jld2")
 
     # Cache check
-    if HashRegistry.HashRegistry.check_registry("data", data_hash) && isfile(output_file)
+    if HashRegistry.check_registry("data", data_hash) && isfile(output_file)
         println("Dataset already exists with Hash: [$data_hash]. Skipping generation.")
         return data_hash
     end
@@ -76,20 +53,10 @@ function run_generate_data(;
     println("--- Generating new High-Fidelity FEM Data (Hash: $data_hash) ---")
 
     # Define the parameter space
-    σ_values = [[10.0^-β] for β in beta_start:beta_step:beta_end]
+    σ_values = [[10.0^-β] for β in config.beta_start:config.beta_step:config.beta_end]
 
     # Generate data using the custom function
-    @time results = DataGeneration.generate_fem_snapshots(
-        σ_values;
-        order=order,
-        L=L,
-        nx=nx,
-        t0=t0,
-        dt=dt,
-        tf=tf,
-        c=c,
-        θ=theta
-    )
+    @time results = DataGeneration.generate_fem_snapshots(σ_values, config)
 
     println("Generation completed")
     println("Snapshots shape (Nx, N_sigma, Nt): ", size(results.snapshots))
@@ -103,7 +70,7 @@ function run_generate_data(;
         x_grid=results.x_grid,
         t_grid=results.t_grid,
         sigma_values=σ_values,
-        config=config
+        config=HashRegistry.struct_to_dict(config)
     )
 
     HashRegistry.update_registry!("data", data_hash, config)
@@ -115,16 +82,12 @@ end
 # Executed only when run from bash terminal
 if abspath(PROGRAM_FILE) == @__FILE__
     # Positional argument parsing from terminal.
-    # We parse the most common parameters. For full control, use REPL with kwargs.
+    # Parsing the most common parameters. For full control, use REPL with kwargs.
     b_start = length(ARGS) > 0 ? parse(Float64, ARGS[1]) : 1.0
     b_end = length(ARGS) > 1 ? parse(Float64, ARGS[2]) : 2.0
     b_step = length(ARGS) > 2 ? parse(Float64, ARGS[3]) : 0.2
     nx_val = length(ARGS) > 3 ? parse(Int, ARGS[4]) : 1000
 
-    run_generate_data(
-        beta_start=b_start,
-        beta_end=b_end,
-        beta_step=b_step,
-        nx=nx_val
-    )
+    config = FEMConfig(beta_start=b_start, beta_end=b_end, beta_step=b_step, nx=nx_val)
+    run_generate_data(config)
 end

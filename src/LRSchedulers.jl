@@ -1,3 +1,5 @@
+module LRSchedulers
+
 using Optimisers
 
 export AbstractLRScheduler, ReduceLROnPlateau, CosineAnnealing
@@ -128,3 +130,5 @@ init_scheduler(T::Type{ReduceLROnPlateau}, epochs::Int) = T()
 
 # Already instantitated object (ex. `ReduceLROnPlateau(patience=50)`)
 init_scheduler(s::AbstractLRScheduler, epochs::Int) = s
+
+end

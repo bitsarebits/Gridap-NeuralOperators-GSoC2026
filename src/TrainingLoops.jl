@@ -3,9 +3,7 @@ module TrainingLoops
 using Lux, Reactant, Enzyme, Optimisers, Random, Statistics, MLUtils
 
 # Custom modules
-using ..ModelTypes, ..DeepONetArch, ..FNOArch, ..Utils
-
-include("LRSchedulers.jl")
+using ..Solvers, ..DeepONetArch, ..FNOArch, ..Utils, ..LRSchedulers
 
 export train_deeponet!, train_fno!, prepare_and_train
 
@@ -131,14 +129,14 @@ executing the training loop.
 # Returns
 - Tuple containing: `(ps_cpu, st_cpu, max_u)` safely moved back to RAM.
 """
-function prepare_and_train(model::ModelTypes.DeepONet, fem_data::Dict, config::Dict, lr_scheduler)
+function prepare_and_train(solver::DeepONetSolver, fem_data::Dict, lr_scheduler)
     # Extract structural configs
-    n_epochs = config["n_epochs"]
-    step_x = config["step_x"]
-    step_t = config["step_t"]
-    m_sensors = config["m_sensors"]
-    p_latent = config["p_latent"]
-    hidden = config["hidden"]
+    n_epochs = solver.epochs
+    step_x = solver.step_x
+    step_t = solver.step_t
+    m_sensors = solver.m_sensors
+    p_latent = solver.p_latent
+    hidden = solver.hidden
 
     # Extract FEM Data
     snapshots = fem_data["snapshots"]       # Shape: (N_dofs, N_sigma, N_time)
@@ -243,12 +241,12 @@ Specialized dispatch for formatting High-Fidelity Data into FNO's multi-channel
 tensor structure `(N_x, in/out_channels, batch)`.
 Initializes a `DataLoader` for batch processing on the Reactant device.
 """
-function prepare_and_train(model::ModelTypes.FNO, fem_data::Dict, config::Dict, lr_scheduler)
-    n_epochs = config["n_epochs"]
-    nx_red = config["nx_red"]
-    nt_red = config["nt_red"]
-    hidden_channels = config["hidden_channels"]
-    modes = config["modes"]
+function prepare_and_train(solver::FNOSolver, fem_data::Dict, lr_scheduler)
+    n_epochs = solver.epochs
+    nx_red = solver.nx_red
+    nt_red = solver.nt_red
+    hidden_channels = solver.hidden_channels
+    modes = solver.modes
 
     snapshots = fem_data["snapshots"]
     x_grid = fem_data["x_grid"]
