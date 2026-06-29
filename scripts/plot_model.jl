@@ -17,13 +17,22 @@ a comparative plot.
 - `model_hash::String`: The 12-character SHA-256 hash of the trained model.
 - `eval_config::EvalConfig`: A struct containing evaluation parameters like `sigma_test`.
 
+# kwargs
+- `log_cb`: callback function to send log to the frontend
+
 # Output
 - Saves a comparative visualization to `plots/deeponet/eval_<eval_hash>.png`.
 - Updates `data/registry.json` under the "evaluations" category.
 - **Returns:** `eval_hash::String` confirming successful plot generation.
 """
-function run_plot(solver::AbstractNeuralSolver, model_hash::String, eval_config::EvalConfig)
-    return execute_plot_pipeline(solver, model_hash, eval_config)
+function run_plot(
+    solver::AbstractNeuralSolver,
+    model_hash::String,
+    eval_config::EvalConfig
+    ;
+    log_cb=(x)->nothing
+)
+    return execute_plot_pipeline(solver, model_hash, eval_config; log_cb=log_cb)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

@@ -5,12 +5,17 @@ using DrWatson
 using Oxygen
 using HTTP
 using JSON3
+using Sockets
+using UUIDs
+using Base64
 
 using experiments_NeuralOperators
 using experiments_NeuralOperators.Solvers
 using experiments_NeuralOperators.LRSchedulers
 include("run_all_models.jl")
 
+# Global dictionary to track the active simulations status (cancelled)
+const ACTIVE_TASKS = Dict{String,Task}()
 
 # CORS Middleware
 # Required during development because Vite runs on port 5173
@@ -34,14 +39,6 @@ function cors_middleware(handler)
         return response
     end
 end
-
-# Static File Server
-# Exposes the DrWatson plots directory to the web.
-# When React asks for http://localhost:8080/plots/hash.png, Julia serves it.
-mkpath(plotsdir())
-
-# Serve the plots directory using DrWatson's built-in macro
-staticfiles(plotsdir(), "/plots")
 
 # Helper function to build Julia structs from JSON payload
 function build_configs(payload)
@@ -110,49 +107,81 @@ end
     return JSON3.write(Dict("status" => "ok", "message" => "Julia Backend Ready"))
 end
 
-# API Endpoint
-# Receives the configuration JSON from React, maps it to Julia structs,
-# and launches the training pipeline.
-@post "/api/run_model" function (req::HTTP.Request)
+# Endpoint WebSocket
+@websocket "/ws/simulate" function (ws::HTTP.WebSocket)
+    # Generate unique ID for the connection/simulation
+    session_id = string(uuid4())
 
     try
-        # Parse incoming JSON payload
-        payload = JSON3.read(req.body)
+        for msg in ws
+            payload = JSON3.read(msg)
 
-        println(">>> Received new simulation request from Dashboard <<<")
+            if payload["action"] == "start"
+                # Start the pipeline in a new thread to keep the WebSocket working
+                t = Threads.@spawn begin
+                    try
+                        # Callback function to send logs to the frontend
+                        log_cb = (info) -> HTTP.WebSockets.send(ws, JSON3.write(info))
 
-        # Build configs
-        fem_config, solver, eval_config = build_configs(payload)
+                        log_cb(Dict("type" => "status", "stage" => "Configuration received..."))
 
-        # Execute the Pipeline
-        data_hash, model_hash, eval_hash = run_pipeline(solver, fem_config, eval_config)
+                        fem_config, solver, eval_config = build_configs(payload["data"])
 
-        solver_name = get_solver_name(solver)
+                        # Pass the callback and the cancellation flagto the pipeline
+                        data_hash, model_hash, eval_hash = run_pipeline(
+                            solver, fem_config, eval_config;
+                            log_cb=log_cb
+                        )
 
-        image_url = "/plots/$(lowercase(solver_name))/eval_$(eval_hash).png"
+                        solver_name = get_solver_name(solver)
+                        image_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).png")
 
-        println(">>> Simulation completed. Sending hashes to Dashboard <<<")
+                        # Read the image bytes and encode to Base64 Data URI
+                        if isfile(image_path)
+                            image_b64 = base64encode(read(image_path))
+                            image_url = "data:image/png;base64," * image_b64
+                        else
+                            error("Image not found on disk after generation")
+                        end
 
-        # Return the response to the dashboard
-        return JSON3.write(Dict(
-            "status" => "success",
-            "data_hash" => data_hash,
-            "model_hash" => model_hash,
-            "eval_hash" => eval_hash,
-            "image_url" => image_url
-        ))
+                        log_cb(Dict(
+                            "type" => "success",
+                            "data_hash" => data_hash,
+                            "model_hash" => model_hash,
+                            "eval_hash" => eval_hash,
+                            "image_url" => image_url
+                        ))
+                    catch e
+                        # Check if the error is the manual interruption
+                        if e isa InterruptException
+                            HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "error", "message" => "Simulation interrupted by the user.")))
+                        else
+                            @error "Simulation failed" exception=(e, catch_backtrace())
+                            HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "error", "message" => sprint(showerror, e))))
+                        end
+                    finally
+                        # Clean up the task registry when done or failed
+                        delete!(ACTIVE_TASKS, session_id)
+                    end
+                end
 
-    catch e
-        @error "Simulation failed" exception=(e, catch_backtrace())
+                # Register the task so we can kill it later
+                ACTIVE_TASKS[session_id] = t
 
-        # Returns structured JSON
-        return HTTP.Response(
-            400,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(
-                "status" => "error",
-                "message" => sprint(showerror, e)
-            )))
+            elseif payload["action"] == "stop"
+                if haskey(ACTIVE_TASKS, session_id)
+                    println(">>> User requested abort for session: $session_id <<<")
+                    # Inject InterruptException into the running Task
+                    schedule(ACTIVE_TASKS[session_id], InterruptException(), error=true)
+                end
+            end
+        end
+    finally
+        # If the user closes the browser/tab, kill the task to free up resources
+        if haskey(ACTIVE_TASKS, session_id)
+            schedule(ACTIVE_TASKS[session_id], InterruptException(), error=true)
+            delete!(ACTIVE_TASKS, session_id)
+        end
     end
 end
 
@@ -210,6 +239,7 @@ end
 println("\n===================================================================")
 println("🚀 GridapROMs API Server is running!")
 println("📡 Listening for React Dashboard on: http://127.0.0.1:8080")
+println("🔌 WebSocket Engine on: ws://127.0.0.1:8080/ws/simulate")
 println("===================================================================\n")
 
 # Attach the CORS middleware and start serving

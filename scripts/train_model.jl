@@ -12,16 +12,25 @@ Loads pre-computed High-Fidelity FEM snapshots using the provided `data_hash`,
 formats them into Branch (sensors) and Trunk (coordinates) inputs, and orchestrates
 the training loop for the specified Neural Operator model via XLA (Reactant.jl).
 
+# Arguments
 - `solver::AbstractNeuralSolver`: An instance of a solver (e.g., `DeepONetSolver` or `FNOSolver`) containing the training and architectural hyperparameters.
 - `data_hash::String`: The 12-character SHA-256 hash of the source FEM dataset.
+
+# kwargs
+- `log_cb`: callback function to send log to the frontend
 
 # Output
 - Saves the trained model weights to `data/models/<solver_name>/model_<model_hash>.jld2`.
 - Updates `data/registry.json` under the "models" category.
 - **Returns:** `model_hash::String` to be passed to evaluation scripts.
 """
-function run_train(solver::AbstractNeuralSolver, data_hash::String)
-    return execute_train_pipeline(solver, data_hash)
+function run_train(
+    solver::AbstractNeuralSolver,
+    data_hash::String
+    ;
+    log_cb=(x)->nothing
+)
+    return execute_train_pipeline(solver, data_hash; log_cb=log_cb)
 end
 
 

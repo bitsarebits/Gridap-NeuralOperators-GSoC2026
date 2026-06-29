@@ -29,13 +29,25 @@ which usually takes a few minutes. After that epochs will be extremely fast.
 - `ps`: Trained model parameters.
 - `st`: Updated model states.
 """
-function train_deeponet!(train_state, data, lr_scheduler; epochs=5000)
+function train_deeponet!(
+    train_state,
+    data,
+    lr_scheduler
+    ;
+    epochs=5000,
+    log_cb=(x)->nothing
+)
     println("--- Starting Training on Reactant Device ---")
     println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
+    log_cb(Dict("type" => "status", "stage" => "XLA/Enzyme JIT Compilation running (may take a few minutes)..."))
 
     t_start = time()
+    t_start_fast = time()
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
+            # Yield allows Julia to catch InterruptException thrown by the WebSocket
+            yield()
+
             _, loss, _, train_state = Training.single_train_step!(
                 AutoEnzyme(), MSELoss(), data, train_state; return_gradients=Val(false)
             )
@@ -47,18 +59,35 @@ function train_deeponet!(train_state, data, lr_scheduler; epochs=5000)
 
             if epoch == 1
                 t_compiled = time()
-                comp_time = round((t_compiled - t_start) / 60, digits=2)
-                println(">>> Compilation and 1st Epoch finished in $comp_time minutes. Starting fast training... <<<")
+                comp_mins = round((t_compiled - t_start) / 60, digits=2)
+                t_start_fast = time() # Reset timer to avoid skewing ETA with compilation time
+
+                msg = "Compilation finished in $comp_mins min. Fast training started."
+                println(msg)
+                log_cb(Dict("type" => "status", "stage" => msg))
                 println("Epoch: $epoch \t Loss: $(Float32(loss))")
 
             elseif epoch % 500 == 0
                 println("Epoch: $epoch \t Loss: $(Float32(loss))")
+
+                elapsed_fast = time() - t_start_fast
+                time_per_epoch = elapsed_fast / (epoch - 1)
+                epochs_left = epochs - epoch
+                eta_seconds = time_per_epoch * epochs_left
+
+                log_cb(Dict(
+                    "type" => "progress",
+                    "stage" => "Training DeepONet",
+                    "epoch" => epoch,
+                    "total_epochs" => epochs,
+                    "loss" => current_loss,
+                    "eta" => round(eta_seconds, digits=1)
+                ))
             end
         end
     end
 
-    t_end = time()
-    total_mins = round((t_end - t_start) / 60, digits=2)
+    total_mins = round((time() - t_start) / 60, digits=2)
     println("--- Training Completed in $total_mins minutes ---")
 
     return train_state.parameters, train_state.states
@@ -71,14 +100,27 @@ Executes the training loop for the FNO model.
 Unlike DeepONet, FNO utilizes a `DataLoader` for mini-batching across the
 parameter space `N_sigma` natively supported by Lux/Reactant.
 """
-function train_fno!(train_state, dataloader, lr_scheduler; epochs=10000)
+function train_fno!(
+    train_state,
+    dataloader,
+    lr_scheduler
+    ;
+    epochs=10000,
+    log_cb=(x)->nothing
+)
     println("--- Starting FNO Training on Reactant Device ---")
     println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
+    log_cb(Dict("type" => "status", "stage" => "XLA/Enzyme JIT Compilation running (may take a few minutes)..."))
 
     t_start = time()
+    t_start_fast = time()
 
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
+
+            # Yield allows Julia to catch InterruptException thrown by the WebSocket
+            yield()
+
             local current_loss = 0.0f0
 
             # Iterate over the batches in the dataloader
@@ -94,11 +136,29 @@ function train_fno!(train_state, dataloader, lr_scheduler; epochs=10000)
 
             if epoch == 1
                 t_compiled = time()
-                comp_time = round((t_compiled - t_start) / 60, digits=2)
-                println(">>> Compilation and 1st Epoch finished in $comp_time minutes. Fast training start... <<<")
-                println("Epoch: $epoch \t Loss: $current_loss")
+                comp_mins = round((t_compiled - t_start) / 60, digits=2)
+                t_start_fast = time() # Reset timer to avoid skewing ETA with compilation time
+
+                msg = "Compilation finished in $comp_mins min. Fast training started."
+                println(msg)
+                log_cb(Dict("type" => "status", "stage" => msg))
+                println("Epoch: $epoch \t Loss: $(Float32(loss))")
             elseif epoch % 500 == 0
                 println("Epoch: $epoch \t Loss: $current_loss")
+
+                elapsed_fast = time() - t_start_fast
+                time_per_epoch = elapsed_fast / (epoch - 1)
+                epochs_left = epochs - epoch
+                eta_seconds = time_per_epoch * epochs_left
+
+                log_cb(Dict(
+                    "type" => "progress",
+                    "stage" => "Training FNO",
+                    "epoch" => epoch,
+                    "total_epochs" => epochs,
+                    "loss" => current_loss,
+                    "eta" => round(eta_seconds, digits=1)
+                ))
             end
         end
     end
@@ -125,10 +185,19 @@ executing the training loop.
 - `fem_data::Dict`: The loaded High-Fidelity dataset containing snapshots and grids.
 - `lr_scheduler`: The initialized learning rate scheduler to be passed to the training loop.
 
+# kwargs
+- `log_cb`: callback function to send log to the frontend
+
 # Returns
 - Tuple containing: `(ps_cpu, st_cpu, max_u)` safely moved back to RAM.
 """
-function prepare_and_train(solver::DeepONetSolver, fem_data::Dict, lr_scheduler)
+function prepare_and_train(
+    solver::DeepONetSolver,
+    fem_data::Dict,
+    lr_scheduler
+    ;
+    log_cb=(x)->nothing
+)
     # Extract structural configs
     n_epochs = solver.epochs
     step_x = solver.step_x
@@ -223,7 +292,7 @@ function prepare_and_train(solver::DeepONetSolver, fem_data::Dict, lr_scheduler)
     # @time shows how long the compilation + execution took
     @time ps_trained, st_trained = train_deeponet!(
         train_state, train_data, lr_scheduler;
-        epochs=n_epochs
+        epochs=n_epochs, log_cb=log_cb
     )
 
     # Move parameters back to CPU before returning for reliable serialization
@@ -244,8 +313,18 @@ Initializes a `DataLoader` for batch processing on the Reactant device.
 - `solver`: The `FNOSolver` struct containing hyperparameters.
 - `fem_data::Dict`: The loaded High-Fidelity dataset containing snapshots and grids.
 - `lr_scheduler`: The initialized learning rate scheduler to be passed to the training loop.
+
+# kwargs
+- `log_cb`: callback function to send log to the frontend
+
 """
-function prepare_and_train(solver::FNOSolver, fem_data::Dict, lr_scheduler)
+function prepare_and_train(
+    solver::FNOSolver,
+    fem_data::Dict,
+    lr_scheduler
+    ;
+    log_cb=(x)->nothing
+)
     n_epochs = solver.epochs
     nx_red = solver.nx_red
     nt_red = solver.nt_red
@@ -312,7 +391,10 @@ function prepare_and_train(solver::FNOSolver, fem_data::Dict, lr_scheduler)
     opt = Adam(0.001f0)
     train_state = Training.TrainState(fno, ps, st, opt)
 
-    @time ps_trained, st_trained = train_fno!(train_state, dataloader, lr_scheduler; epochs=n_epochs)
+    @time ps_trained, st_trained = train_fno!(
+        train_state, dataloader, lr_scheduler;
+        epochs=n_epochs, log_cb=log_cb
+    )
 
     ps_cpu = ps_trained |> CDEV
     st_cpu = st_trained |> CDEV

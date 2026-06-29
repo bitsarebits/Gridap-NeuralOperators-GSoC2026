@@ -22,17 +22,6 @@ export const pingServer = async (): Promise<boolean> => {
     }
 };
 
-// Function for the simulation
-export const runSimulation = async (
-    payload: SimulationPayload,
-): Promise<SimulationResponse> => {
-    const response = await api.post<SimulationResponse>(
-        "/api/run_model",
-        payload,
-    );
-    return response.data;
-};
-
 export const checkRegistry = async (
     payload: SimulationPayload,
 ): Promise<CacheCheckResponse> => {

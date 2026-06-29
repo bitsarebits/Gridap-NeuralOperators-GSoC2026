@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -26,7 +26,7 @@ import {
 } from "./types";
 
 // API
-import { checkRegistry, pingServer, runSimulation } from "./api";
+import { checkRegistry, pingServer } from "./api";
 
 // Components
 import FEMConfig from "./components/forms/FEMConfig";
@@ -90,6 +90,15 @@ const buildPayload = (data: SimulationFormValues): SimulationPayload => {
     };
 };
 
+// Helper: Format ETA to mm:ss
+const formatETA = (seconds: number) => {
+    if (!seconds || seconds < 0) return "Calculating...";
+    if (seconds < 60) return `${Math.floor(seconds)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}m ${s}s`;
+};
+
 function App() {
     // Initialize the form with zod
     const methods = useForm<SimulationFormValues>({
@@ -109,6 +118,16 @@ function App() {
     );
     const [isCheckingCache, setIsCheckingCache] = useState(false);
 
+    // WebSocket
+    const wsRef = useRef<WebSocket | null>(null);
+    const [statusMessage, setStatusMessage] = useState<string>("");
+    const [progress, setProgress] = useState<{
+        epoch: number;
+        total: number;
+        loss: number;
+        eta: number;
+    } | null>(null);
+
     // Watch all the form values
     const formValues = methods.watch();
 
@@ -125,7 +144,9 @@ function App() {
             if (!isMounted) return;
 
             if (isAlive) {
-                setServerStatus("connected");
+                if (serverStatus !== "connected") {
+                    setServerStatus("connected");
+                }
                 retries = 0;
             } else {
                 retries++;
@@ -147,14 +168,15 @@ function App() {
         // Do the first check immediately
         checkServer();
 
-        // Set a timeout to do the check every 2.5 seconds
-        const intervalId = setInterval(checkServer, 2500);
+        // Set dynamically the timeout to do the check every 2.5 seconds
+        const pollingInterval = serverStatus === "connected" ? 15000 : 2500;
+        const intervalId = setInterval(checkServer, pollingInterval);
 
         return () => {
             isMounted = false;
             clearInterval(intervalId);
         };
-    }, []);
+    }, [serverStatus]);
 
     // Debounce for the cache check
     useEffect(() => {
@@ -191,31 +213,74 @@ function App() {
         return () => clearTimeout(timer);
     }, [JSON.stringify(formValues), serverStatus]); // stringify to deeply compare the object
 
-    // Submit handler
-    const onSubmit = async (data: SimulationFormValues) => {
+    // Submit handler via WebSocket
+    const onSubmit = (data: SimulationFormValues) => {
         setIsLoading(true);
         setError(null);
         setResult(null);
+        setProgress(null);
+        setStatusMessage("Connecting to Julia Engine...");
 
-        const payload: SimulationPayload = buildPayload(data);
+        const payload = buildPayload(data);
 
-        console.log("Payload sent to Julia:", payload);
+        // Initialize WebSocket connection
+        const socket = new WebSocket("ws://127.0.0.1:8080/ws/simulate");
+        wsRef.current = socket;
 
-        try {
-            const response = await runSimulation(payload);
+        socket.onopen = () => {
+            setStatusMessage("Starting pipeline...");
+            socket.send(JSON.stringify({ action: "start", data: payload }));
+        };
 
-            if (response.status === "success") {
-                setResult(response);
-            } else {
-                setError(
-                    response.message || "Simulation failed on the server.",
-                );
+        socket.onmessage = (event) => {
+            const res = JSON.parse(event.data);
+
+            switch (res.type) {
+                case "status":
+                    setStatusMessage(res.stage || res.message);
+                    break;
+                case "progress":
+                    setStatusMessage(res.stage);
+                    setProgress({
+                        epoch: res.epoch,
+                        total: res.total_epochs,
+                        loss: res.loss,
+                        eta: res.eta,
+                    });
+                    break;
+                case "success":
+                    setResult(res);
+                    setIsLoading(false);
+                    setStatusMessage("");
+                    socket.close();
+                    break;
+                case "error":
+                    setError(res.message);
+                    setIsLoading(false);
+                    setStatusMessage("");
+                    socket.close();
+                    break;
             }
-        } catch (err) {
-            console.error(err);
-            setError("Failed to connect to the Julia backend.");
-        } finally {
+        };
+
+        socket.onerror = () => {
+            setError("WebSocket connection failed or lost.");
             setIsLoading(false);
+        };
+
+        socket.onclose = () => {
+            // Safety check: if closed unexpectedly while loading
+            if (isLoading) {
+                setIsLoading(false);
+            }
+        };
+    };
+
+    // Handler to manually abort the pipeline
+    const handleAbort = () => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ action: "stop" }));
+            setStatusMessage("Aborting... Waiting for Julia threads to yield.");
         }
     };
 
@@ -370,15 +435,14 @@ function App() {
                 {/* Error Banner */}
                 {error && (
                     <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 flex items-center gap-3 rounded-r-lg">
-                        <AlertCircle className="text-red-500" />
+                        <AlertCircle className="text-red-500 shrink-0" />
                         <p className="text-red-700 text-sm font-medium">
                             {error}
                         </p>
                     </div>
                 )}
 
-                {/* FormProvider wrapping the form. 
-                Allows FEMConfig, ModelConfig ed EvalConfig to use `useFormContext`*/}
+                {/* Form */}
                 <FormProvider {...methods}>
                     <form
                         onSubmit={methods.handleSubmit(onSubmit)}
@@ -386,43 +450,78 @@ function App() {
                     >
                         {/* Grid structure for the sub-components */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* left column */}
                             <FEMConfig isLoading={isLoading} />
-
-                            {/* right column */}
                             <div className="space-y-6 flex flex-col">
                                 <ModelConfig isLoading={isLoading} />
                                 <EvalConfig isLoading={isLoading} />
                             </div>
                         </div>
 
-                        {/* Submit button */}
-                        <div className="border-t pt-6 flex justify-end">
-                            <button
-                                type="submit"
-                                disabled={isLoading}
-                                className={`w-full lg:w-auto font-bold py-4 px-10 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg 
-                  ${
-                      isLoading
-                          ? "bg-slate-400 cursor-not-allowed text-slate-200"
-                          : "bg-slate-900 hover:bg-blue-600 text-white hover:shadow-blue-500/30"
-                  }`}
-                            >
-                                {isLoading ? (
-                                    <>
-                                        <Loader2
-                                            size={20}
-                                            className="animate-spin"
-                                        />
-                                        Running Pipeline...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Play size={20} fill="currentColor" />
-                                        Launch Pipeline
-                                    </>
-                                )}
-                            </button>
+                        {/* Submit or Abort Buttons Area */}
+                        <div className="border-t pt-6 flex flex-col lg:flex-row justify-end items-center gap-4">
+                            {isLoading && (
+                                <div className="flex-1 w-full bg-slate-50 border border-slate-100 rounded-xl p-4 flex flex-col gap-3">
+                                    <div className="flex justify-between items-center text-sm font-semibold text-slate-700">
+                                        <span className="flex items-center gap-2">
+                                            <Loader2
+                                                size={16}
+                                                className="animate-spin text-blue-600"
+                                            />
+                                            {statusMessage}
+                                        </span>
+                                        {progress && (
+                                            <span className="text-slate-500 tabular-nums">
+                                                ETA: {formatETA(progress.eta)}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Progress details and Bar (Visible only during Neural Training) */}
+                                    {progress && (
+                                        <div className="space-y-1.5 animate-in fade-in duration-300">
+                                            <div className="flex justify-between text-xs text-slate-500 font-medium px-1">
+                                                <span>
+                                                    Epoch: {progress.epoch} /{" "}
+                                                    {progress.total}
+                                                </span>
+                                                <span className="tabular-nums">
+                                                    Loss:{" "}
+                                                    {progress.loss.toExponential(
+                                                        4,
+                                                    )}
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                                <div
+                                                    className="bg-blue-600 h-full rounded-full transition-all duration-300 ease-out"
+                                                    style={{
+                                                        width: `${(progress.epoch / progress.total) * 100}%`,
+                                                    }}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {isLoading ? (
+                                <button
+                                    type="button"
+                                    onClick={handleAbort}
+                                    className="w-full lg:w-auto font-bold py-4 px-8 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg bg-red-600 hover:bg-red-700 text-white hover:shadow-red-500/30 shrink-0"
+                                >
+                                    <XCircle size={20} />
+                                    Abort Pipeline
+                                </button>
+                            ) : (
+                                <button
+                                    type="submit"
+                                    className="w-full lg:w-auto font-bold py-4 px-10 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg bg-slate-900 hover:bg-blue-600 text-white hover:shadow-blue-500/30 shrink-0"
+                                >
+                                    <Play size={20} fill="currentColor" />
+                                    Launch Pipeline
+                                </button>
+                            )}
                         </div>
                     </form>
                 </FormProvider>

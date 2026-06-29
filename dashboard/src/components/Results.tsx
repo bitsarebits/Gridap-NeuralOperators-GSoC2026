@@ -15,32 +15,30 @@ export default function Results({ plotHash, imageUrl }: ResultsProps) {
 
             <div className="border rounded-xl overflow-hidden bg-slate-50 flex justify-center p-4">
                 <img
-                    src={`http://localhost:8080${imageUrl}`}
+                    src={imageUrl}
                     alt={`Plot for hash ${plotHash}`}
                     className="max-w-full h-auto rounded-lg shadow-sm"
-                    onError={(e) =>
-                        console.error(
-                            "Image not found at URL:",
-                            e.currentTarget.src,
-                        )
+                    onError={() =>
+                        console.error("Failed to render the Base64 image data.")
                     }
                 />
             </div>
 
-            <div className="mt-4 flex justify-between items-center text-sm text-slate-500">
+            <div className="mt-6 flex justify-between items-center text-sm text-slate-500">
                 <p>
                     Hash reference:{" "}
-                    <span className="font-mono bg-slate-100 px-2 py-1 rounded">
+                    <span className="font-mono bg-slate-100 px-2 py-1 rounded text-slate-700">
                         {plotHash}
                     </span>
                 </p>
+
+                {/* Download Button */}
                 <a
-                    href={`http://localhost:8080${imageUrl}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-600 hover:underline font-medium"
+                    href={imageUrl}
+                    download={`evaluation_${plotHash}.png`}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-lg shadow-sm transition-colors flex items-center gap-2"
                 >
-                    Open Image in New Tab
+                    Download Plot
                 </a>
             </div>
         </div>

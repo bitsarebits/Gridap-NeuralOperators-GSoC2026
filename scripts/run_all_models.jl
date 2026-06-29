@@ -26,6 +26,9 @@ for easy experimentation via the REPL.
 - `fem_config::FEMConfig`: A struct containing all parameters for the high-fidelity FEM data generation.
 - `eval_config::EvalConfig`: A struct containing parameters for the evaluation and plotting phase.
 
+# kwargs
+- `log_cb`: callback function to send log to the frontend
+
 # Output
 Executes the full chain and prints the resulting `data_hash`, `model_hash`,
 and `eval_hash` to the standard output.
@@ -34,20 +37,29 @@ function run_pipeline(
     solver::AbstractNeuralSolver,
     fem_config::FEMConfig,
     eval_config::EvalConfig
+    ;
+    log_cb=(x)->nothing
 )
     solver_name = get_solver_name(solver)
     println("=====================================================")
     println("STARTING END-TO-END PIPELINE FOR: $(solver_name)")
     println("=====================================================")
 
+    log_cb(Dict("type" => "status", "stage" => "Starting pipeline execution..."))
+
     # Data
+    log_cb(Dict("type" => "status", "stage" => "Phase 1/3: High-Fidelity Data Generation..."))
     data_hash = run_generate_data(fem_config)
 
     # Model
-    model_hash = run_train(solver, data_hash)
+    log_cb(Dict("type" => "status", "stage" => "Phase 2/3: Neural Operator Training..."))
+    model_hash = run_train(solver, data_hash; log_cb)
 
     # Evaluation and plotting
+    log_cb(Dict("type" => "status", "stage" => "Phase 3/3: Model Evaluation and Plotting..."))
     eval_hash = run_plot(solver, model_hash, eval_config)
+
+    log_cb(Dict("type" => "status", "stage" => "Pipeline completed successfully!"))
 
     println("\n=====================================================")
     println("PIPELINE COMPLETED SUCCESSFULLY")
