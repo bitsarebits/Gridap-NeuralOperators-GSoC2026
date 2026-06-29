@@ -64,3 +64,11 @@ export interface SimulationResponse {
     eval_hash?: string;
     image_url?: string;
 }
+
+export interface CacheCheckResponse {
+    status: "success" | "error";
+    message?: string;
+    data_exists: boolean;
+    model_exists: boolean;
+    eval_exists: boolean;
+}

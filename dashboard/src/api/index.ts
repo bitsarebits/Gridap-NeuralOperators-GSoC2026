@@ -1,5 +1,9 @@
 import axios from "axios";
-import type { SimulationPayload, SimulationResponse } from "../types";
+import type {
+    CacheCheckResponse,
+    SimulationPayload,
+    SimulationResponse,
+} from "../types";
 
 // Base instance for Axios
 export const api = axios.create({
@@ -9,12 +13,31 @@ export const api = axios.create({
     },
 });
 
+export const pingServer = async (): Promise<boolean> => {
+    try {
+        const response = await api.get("/api/ping");
+        return response.data.status === "ok";
+    } catch (error) {
+        return false;
+    }
+};
+
 // Function for the simulation
 export const runSimulation = async (
     payload: SimulationPayload,
 ): Promise<SimulationResponse> => {
     const response = await api.post<SimulationResponse>(
         "/api/run_model",
+        payload,
+    );
+    return response.data;
+};
+
+export const checkRegistry = async (
+    payload: SimulationPayload,
+): Promise<CacheCheckResponse> => {
+    const response = await api.post<CacheCheckResponse>(
+        "/api/check_registry",
         payload,
     );
     return response.data;

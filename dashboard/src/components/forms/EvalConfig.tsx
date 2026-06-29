@@ -9,7 +9,7 @@ export default function EvalConfig({ isLoading }: Props) {
     const { register } = useFormContext<SimulationFormValues>();
 
     return (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center mt-6">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center mt-2">
             <div>
                 <h2 className="text-sm font-bold text-amber-900">
                     Zero-Shot Evaluation

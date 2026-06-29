@@ -43,22 +43,13 @@ mkpath(plotsdir())
 # Serve the plots directory using DrWatson's built-in macro
 staticfiles(plotsdir(), "/plots")
 
-# API Endpoint
-# Receives the configuration JSON from React, maps it to Julia structs,
-# and launches the training pipeline.
-@post "/api/run_model" function (req::HTTP.Request)
-    # Parse incoming JSON payload
-    payload = JSON3.read(req.body)
+# Helper function to build Julia structs from JSON payload
+function build_configs(payload)
+    # Construct FEMConfig (using dictionary unpacking)
+    fem_config = FEMConfig(; Dict(Symbol(k) => v for (k, v) in pairs(payload["fem_config"]))...)
 
-    println(">>> Received new simulation request from Dashboard <<<")
-
-    # Construct FEMConfig
-    fem_dict = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in payload["fem_config"])
-    fem_config = FEMConfig(; fem_dict...)
-
-    # Construct EvalConfig
-    eval_dict = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in payload["eval_config"])
-    eval_config = EvalConfig(; eval_dict...)
+    # Construct EvalConfig (using dictionary unpacking)
+    eval_config = EvalConfig(; Dict(Symbol(k) => v for (k, v) in pairs(payload["eval_config"]))...)
 
     # Construct LR Scheduler
     sched_data = payload["scheduler"]
@@ -78,7 +69,7 @@ staticfiles(plotsdir(), "/plots")
             start_lr=Float32(sched_data["rop_start_lr"])
         )
     else
-        return HTTP.Response(400, "Unknown Scheduler Type")
+        error("Unknown Scheduler Type: $(sched_data["type"])")
     end
 
     # Construct Neural Solver
@@ -96,8 +87,6 @@ staticfiles(plotsdir(), "/plots")
             lr_scheduler=scheduler
         )
     elseif solver_data["type"] == "FNO"
-        # Parse comma-separated strings into Julia Tuples
-        # E.g., "64, 64, 128" -> (64, 64, 128)
         parsed_hidden = Tuple(parse.(Int, split(solver_data["hidden_channels"], ",")))
         parsed_modes = Tuple(parse.(Int, split(solver_data["modes"], ",")))
 
@@ -110,27 +99,111 @@ staticfiles(plotsdir(), "/plots")
             lr_scheduler=scheduler
         )
     else
-        return HTTP.Response(400, "Unknown Solver Type")
+        error("Unknown Solver Type: $(solver_data["type"])")
     end
 
-    # Execute the Pipeline
-    # This will block until the training/evaluation is complete.
-    data_hash, model_hash, eval_hash = run_pipeline(solver, fem_config, eval_config)
+    return fem_config, solver, eval_config
+end
 
-    solver_name = get_solver_name(solver)
+# Endpoint to verify the server is compiled and ready
+@get "/api/ping" function (req::HTTP.Request)
+    return JSON3.write(Dict("status" => "ok", "message" => "Julia Backend Ready"))
+end
 
-    image_url = "/plots/$(lowercase(solver_name))/eval_$(eval_hash).png"
+# API Endpoint
+# Receives the configuration JSON from React, maps it to Julia structs,
+# and launches the training pipeline.
+@post "/api/run_model" function (req::HTTP.Request)
 
-    println(">>> Simulation completed. Sending hashes to Dashboard <<<")
+    try
+        # Parse incoming JSON payload
+        payload = JSON3.read(req.body)
 
-    # Return the response to the dashboard
-    return JSON3.write(Dict(
-        "status" => "success",
-        "data_hash" => data_hash,
-        "model_hash" => model_hash,
-        "eval_hash" => eval_hash,
-        "image_url" => image_url
-    ))
+        println(">>> Received new simulation request from Dashboard <<<")
+
+        # Build configs
+        fem_config, solver, eval_config = build_configs(payload)
+
+        # Execute the Pipeline
+        data_hash, model_hash, eval_hash = run_pipeline(solver, fem_config, eval_config)
+
+        solver_name = get_solver_name(solver)
+
+        image_url = "/plots/$(lowercase(solver_name))/eval_$(eval_hash).png"
+
+        println(">>> Simulation completed. Sending hashes to Dashboard <<<")
+
+        # Return the response to the dashboard
+        return JSON3.write(Dict(
+            "status" => "success",
+            "data_hash" => data_hash,
+            "model_hash" => model_hash,
+            "eval_hash" => eval_hash,
+            "image_url" => image_url
+        ))
+
+    catch e
+        @error "Simulation failed" exception=(e, catch_backtrace())
+
+        # Returns structured JSON
+        return HTTP.Response(
+            400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(
+                "status" => "error",
+                "message" => sprint(showerror, e)
+            )))
+    end
+end
+
+@post "/api/check_registry" function (req::HTTP.Request)
+    try
+        # Parse incoming JSON payload
+        payload = JSON3.read(req.body)
+
+        # Build configs
+        fem_config, solver, eval_config = build_configs(payload)
+
+        solver_name = get_solver_name(solver)
+
+        # Check Data Hash
+        data_hash = HashRegistry.config_hash(fem_config)
+        data_exists = HashRegistry.check_registry("data", data_hash)
+
+        # Check Model Hash
+        model_dict = Dict(
+            "solver_type" => solver_name,
+            "solver" => HashRegistry.struct_to_dict(solver),
+            "data_hash" => data_hash
+        )
+        model_hash = HashRegistry.config_hash(model_dict)
+        model_exists = HashRegistry.check_registry("models", model_hash)
+
+        # Check Eval Hash
+        eval_dict = Dict(
+            "model_hash" => model_hash,
+            "eval_config" => HashRegistry.struct_to_dict(eval_config)
+        )
+        eval_hash = HashRegistry.config_hash(eval_dict)
+        eval_exists = HashRegistry.check_registry("evaluations", eval_hash)
+
+        return JSON3.write(Dict(
+            "status" => "success",
+            "data_exists" => data_exists,
+            "model_exists" => model_exists,
+            "eval_exists" => eval_exists
+        ))
+
+    catch e
+        @error "Cache check failed" exception=(e, catch_backtrace())
+        return HTTP.Response(
+            400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(
+                "status" => "error",
+                "message" => sprint(showerror, e)
+            )))
+    end
 end
 
 # Start the Server
