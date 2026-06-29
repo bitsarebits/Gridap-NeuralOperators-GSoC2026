@@ -9,22 +9,13 @@ using ..Solvers
 export generate_fem_snapshots
 
 """
-    generate_fem_snapshots(σ_values; kwargs...)
+    generate_fem_snapshots(σ_values::Vector{Vector{Float64}}, config::FEMConfig)
 
 Generates High-Fidelity (FEM) snapshots using GridapROMs.jl.
 
 # Arguments
 - `σ_values::Vector{Vector{Float64}}`: List of standard deviations for the Gaussian pulse.
-
-# Keyword Arguments
-- `order::Int=3`: The polynomial degree (order) of the finite element space used for spatial discretization.
-- `L::Float64=5.0`: Domain half-length `[-L, L]`.
-- `nx::Int=1000`: Number of spatial partitions (elements).
-- `t0::Float64=0.0`: Initial simulation time.
-- `dt::Float64=0.01`: Time step size.
-- `tf::Float64=1.0`: Final simulation time.
-- `c::Float64=1.0`: Advection velocity.
-- `θ::Float64=0.5`: Theta-method parameter (0.5 for Crank-Nicolson).
+- `config::FEMConfig`: A struct containing all physical and numerical parameters for the FEM simulation.
 
 # Returns
 - A `NamedTuple` containing:

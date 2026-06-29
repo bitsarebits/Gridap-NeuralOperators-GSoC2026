@@ -9,10 +9,16 @@ export evaluate_and_predict
 
 
 """
-    evaluate_and_predict(model::DeepONet, weights_data, fem_data, model_config, sigma_test)
+    evaluate_and_predict(solver::DeepONetSolver, weights_data::AbstractDict, fem_data::AbstractDict, sigma_test::Float64)
 
 Specialized dispatch for formatting inputs, compiling XLA graph, and executing
 DeepONet inference.
+
+# Arguments
+- `solver::DeepONetSolver`: The DeepONet solver instance containing architectural parameters.
+- `weights_data::AbstractDict`: Dictionary containing the trained model weights (`ps`, `st`).
+- `fem_data::AbstractDict`: Dictionary containing the original FEM data and configuration.
+- `sigma_test::Float64`: The unseen standard deviation to evaluate the model on.
 """
 function evaluate_and_predict(solver::DeepONetSolver, weights_data::AbstractDict, fem_data::AbstractDict, sigma_test::Float64)
     fem_config = fem_data["config"]
@@ -75,10 +81,16 @@ function evaluate_and_predict(solver::DeepONetSolver, weights_data::AbstractDict
 end
 
 """
-    evaluate_and_predict(model::FNO, weights_data, fem_data, model_config, sigma_test)
+    evaluate_and_predict(solver::FNOSolver, weights_data::AbstractDict, fem_data::AbstractDict, sigma_test::Float64)
 
 Specialized dispatch for FNO inference. Demonstrates Super-Resolution by
 evaluating on the full physical grid (`N_x_full`) natively.
+
+# Arguments
+- `solver::FNOSolver`: The FNO solver instance containing architectural parameters.
+- `weights_data::AbstractDict`: Dictionary containing the trained model weights (`ps`, `st`).
+- `fem_data::AbstractDict`: Dictionary containing the original FEM data and configuration.
+- `sigma_test::Float64`: The unseen standard deviation to evaluate the model on.
 """
 function evaluate_and_predict(solver::FNOSolver, weights_data::AbstractDict, fem_data::AbstractDict, sigma_test::Float64)
     x_grid = fem_data["x_grid"]

@@ -6,25 +6,17 @@ using experiments_NeuralOperators.Solvers
 using experiments_NeuralOperators.Pipelines
 
 """
-    run_train(model::DeepONet; data_hash::String, kwargs...)
+    run_train(solver::AbstractNeuralSolver, data_hash::String)
 
 Loads pre-computed High-Fidelity FEM snapshots using the provided `data_hash`,
 formats them into Branch (sensors) and Trunk (coordinates) inputs, and orchestrates
-the DeepONet training loop via XLA (Reactant.jl).
+the training loop for the specified Neural Operator model via XLA (Reactant.jl).
 
-# Required Arguments
+- `solver::AbstractNeuralSolver`: An instance of a solver (e.g., `DeepONetSolver` or `FNOSolver`) containing the training and architectural hyperparameters.
 - `data_hash::String`: The 12-character SHA-256 hash of the source FEM dataset.
 
-# Keyword Arguments
-- `n_epochs::Int=20000`: Total training epochs.
-- `step_x::Int=10`: Spatial subsampling step (reduces grid size).
-- `step_t::Int=5`: Temporal subsampling step.
-- `m_sensors::Int=100`: Number of input sensors for the Branch Net.
-- `p_latent::Int=64`: Dimensionality of the latent space (output of Branch/Trunk).
-- `hidden::Int=64`: Number of neurons per hidden layer in the MLPs.
-
 # Output
-- Saves the trained model weights to `data/models/deeponet/model_<model_hash>.jld2`.
+- Saves the trained model weights to `data/models/<solver_name>/model_<model_hash>.jld2`.
 - Updates `data/registry.json` under the "models" category.
 - **Returns:** `model_hash::String` to be passed to evaluation scripts.
 """

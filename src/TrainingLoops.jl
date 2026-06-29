@@ -114,16 +114,15 @@ end
 # --------------- SPECIALIZED DISPATCH ------------------
 
 """
-    prepare_and_train(model::DeepONet, fem_data::Dict, config::Dict)
+    prepare_and_train(solver::DeepONetSolver, fem_data::Dict, lr_scheduler)
 
 Specialized dispatch for formatting High-Fidelity Data into DeepONet's Branch/Trunk
 structure, initializing the architecture on the appropriate hardware device, and
 executing the training loop.
 
 # Arguments
-- `model`: The `DeepONet` struct acting as a dispatch target.
+- `solver`: The `DeepONetSolver` struct containing hyperparameters.
 - `fem_data::Dict`: The loaded High-Fidelity dataset containing snapshots and grids.
-- `config::Dict`: Hyperparameters required for network initialization and slicing.
 - `lr_scheduler`: The initialized learning rate scheduler to be passed to the training loop.
 
 # Returns
@@ -235,11 +234,16 @@ function prepare_and_train(solver::DeepONetSolver, fem_data::Dict, lr_scheduler)
 end
 
 """
-    prepare_and_train(model::FNO, fem_data::Dict, config::Dict)
+    prepare_and_train(solver::FNOSolver, fem_data::Dict, lr_scheduler)
 
 Specialized dispatch for formatting High-Fidelity Data into FNO's multi-channel
 tensor structure `(N_x, in/out_channels, batch)`.
 Initializes a `DataLoader` for batch processing on the Reactant device.
+
+# Arguments
+- `solver`: The `FNOSolver` struct containing hyperparameters.
+- `fem_data::Dict`: The loaded High-Fidelity dataset containing snapshots and grids.
+- `lr_scheduler`: The initialized learning rate scheduler to be passed to the training loop.
 """
 function prepare_and_train(solver::FNOSolver, fem_data::Dict, lr_scheduler)
     n_epochs = solver.epochs

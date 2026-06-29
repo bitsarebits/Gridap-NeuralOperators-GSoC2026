@@ -8,7 +8,7 @@ include("plot_model.jl")
 using experiments_NeuralOperators.Solvers
 
 """
-    run_pipeline(model::AbstractNeuralModel=DeepONet(); kwargs...)
+    run_pipeline(solver::AbstractNeuralSolver, fem_config::FEMConfig, eval_config::EvalConfig)
 
 Orchestrates the Neural Operator workflow end-to-end using a smart, hash-driven
 caching mechanism. It linearly propagates execution through Data Generation,
@@ -20,6 +20,11 @@ instantly passing the resulting hash to the next stage.
 
 Exposes all underlying physical, numerical, and architectural parameters
 for easy experimentation via the REPL.
+
+# Arguments
+- `solver::AbstractNeuralSolver`: An instance of a solver (e.g., `DeepONetSolver` or `FNOSolver`) with its architectural and training hyperparameters.
+- `fem_config::FEMConfig`: A struct containing all parameters for the high-fidelity FEM data generation.
+- `eval_config::EvalConfig`: A struct containing parameters for the evaluation and plotting phase.
 
 # Output
 Executes the full chain and prints the resulting `data_hash`, `model_hash`,
@@ -50,6 +55,8 @@ function run_pipeline(
     println("Model Hash: $model_hash")
     println("Eval Hash : $eval_hash")
     println("=====================================================")
+
+    return data_hash, model_hash, eval_hash
 end
 
 # Executed only when run from bash terminal

@@ -28,7 +28,7 @@ end
 
 """
     config_hash(config::Dict)
-    config_hash(config::Any) -> Fallback for the structs
+    config_hash(config::Any)
 Generates a SHA-256 hash (truncated to 12 characters) based on the dictionary keys.
 Alphabetical sorting ensures that the hash is deterministic.
 """
@@ -41,7 +41,7 @@ function config_hash(config::Dict)
 end
 
 # If passing a struct convert it before the hash computation
-config_hash(config::Any) = config_hash(struct2dict(config))
+config_hash(config::Any) = config_hash(struct_to_dict(config))
 
 """
     load_registry()

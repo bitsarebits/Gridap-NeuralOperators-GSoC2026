@@ -6,17 +6,16 @@ using experiments_NeuralOperators.Solvers
 using experiments_NeuralOperators.Pipelines
 
 """
-    run_plot(model::DeepONet; model_hash::String, kwargs...)
+    run_plot(solver::AbstractNeuralSolver, model_hash::String, eval_config::EvalConfig)
 
-Evaluates a trained DeepONet model on an unseen parameter (Zero-Shot execution),
+Evaluates a trained Neural Operator model on an unseen parameter (Zero-Shot execution),
 benchmarks its inference time against the Gridap FEM solver, and generates
 a comparative plot.
 
-# Required Arguments
+# Arguments
+- `solver::AbstractNeuralSolver`: The solver instance (e.g., `DeepONetSolver()`).
 - `model_hash::String`: The 12-character SHA-256 hash of the trained model.
-
-# Keyword Arguments
-- `sigma_test::Float64=0.03`: The unseen standard deviation to evaluate the model on.
+- `eval_config::EvalConfig`: A struct containing evaluation parameters like `sigma_test`.
 
 # Output
 - Saves a comparative visualization to `plots/deeponet/eval_<eval_hash>.png`.

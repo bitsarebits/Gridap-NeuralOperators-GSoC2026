@@ -8,17 +8,15 @@ using ..TrainingLoops, ..Solvers, ..DataGeneration, ..HashRegistry, ..Inference,
 export execute_train_pipeline, execute_plot_pipeline
 
 """
-    execute_train_pipeline(model::AbstractNeuralModel, config::Dict, lr_scheduler)
+    execute_train_pipeline(solver::AbstractNeuralSolver, data_hash::String)
 
 Internal core function. Handles cache validation, loading the High-Fidelity dataset,
 triggering the specialized training dispatch (via `prepare_and_train`), and saving
 the resulting weights to disk.
 
 # Arguments
-- `model`: An instance of a concrete neural model type (e.g., `DeepONet()`).
-- `config::Dict`: A complete dictionary containing all hyperparameters, including defaults,
-  to guarantee deterministic and collision-free SHA-256 hashing.
-- `lr_scheduler`: The concrete learning rate scheduler instance to be used during training.
+- `solver`: An instance of a concrete neural solver type (e.g., `DeepONetSolver()`).
+- `data_hash::String`: The unique hash identifier of the source FEM dataset.
 
 # Returns
 - `model_hash::String`: The unique hash identifier of the trained model.
@@ -68,15 +66,16 @@ function execute_train_pipeline(solver::AbstractNeuralSolver, data_hash::String)
 end
 
 """
-    execute_plot_pipeline(model::AbstractNeuralModel, config::Dict)
+    execute_plot_pipeline(solver::AbstractNeuralSolver, model_hash::String, eval_config::EvalConfig)
 
 Internal core function. Handles registry validation, executing the High-Fidelity
 FEM solver for benchmarking, triggering the model-specific inference dispatch,
 and generating the comparative AlgebraOfGraphics plots.
 
 # Arguments
-- `model`: An instance of a concrete neural model type (e.g., `DeepONet()`).
-- `config::Dict`: A dictionary containing `model_hash` and `sigma_test`.
+- `solver`: An instance of a concrete neural solver type (e.g., `DeepONetSolver()`).
+- `model_hash::String`: The unique hash identifier of the trained model.
+- `eval_config::EvalConfig`: A struct containing evaluation parameters like `sigma_test`.
 
 # Returns
 - `eval_hash::String`: The unique hash identifier of the evaluation.
