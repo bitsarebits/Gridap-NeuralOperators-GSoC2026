@@ -319,6 +319,25 @@ end
     end
 end
 
+# Define the path to the React static build
+const BUILD_DIR = joinpath(@__DIR__, "..", "dashboard", "dist")
+
+# Serve the static dashboard if the build directory exists
+if isdir(BUILD_DIR)
+    @info "Serving static React dashboard from: $BUILD_DIR"
+
+    # Mount the entire dist folder to the root route
+    staticfiles(BUILD_DIR, "/")
+
+    # Optional: Catch-all route for SPA client-side routing (React Router)
+    # If a user refreshes a page on a specific route, serve index.html
+    @get "/*" function (req::HTTP.Request)
+        return HTTP.Response(200, ["Content-Type" => "text/html"], read(joinpath(BUILD_DIR, "index.html")))
+    end
+else
+    @warn "Dashboard build directory not found. Please run 'npm run build' inside the 'dashboard' folder."
+end
+
 # Start the Server
 println("\n===================================================================")
 println("🚀 GridapROMs API Server is running!")

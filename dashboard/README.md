@@ -1,75 +1,35 @@
-# React + TypeScript + Vite
+# GridapROMs.jl - Web Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This directory contains the frontend web dashboard for **GridapROMs.jl**. It is built using React 19, TypeScript, Vite, and Tailwind CSS. The dashboard acts as a graphical interface to orchestrate the generation of High-Fidelity FEM snapshots, manage training loops for Neural Operators (DeepONet, FNO, NOMAD), and visualize zero-shot evaluations in real-time.
 
-Currently, two official plugins are available:
+It communicates with the Julia backend via REST APIs and WebSockets orchestrated by `Oxygen.jl`.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Development Workflow (Requires Node.js)
 
-## React Compiler
+If you are actively developing the frontend, use the Vite development server to benefit from Hot Module Replacement (HMR).
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+# Install dependencies
+npm install
 
-## Expanding the ESLint configuration
+# Start the Vite dev server
+npm run dev
+```
+*Note: Ensure the Julia backend (`scripts/server_dashboard.jl` or `dev.sh`) is running concurrently to handle API and WebSocket requests.*
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Production Build (No Node.js Required for End-Users)
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+To create a static build that can be open without node.js.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+# Generate the static build
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+This command bundles and minifies the application into the `dist` directory. The `Oxygen.jl` backend is configured to serve these static files. 
+Once the build is generated, end-users only need to start the Julia server:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+julia --project=.. scripts/server_dashboard.jl
 ```
+Then, navigate to `http://127.0.0.1:8080` in a web browser. The entire React application will be served directly by Julia.

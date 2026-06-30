@@ -1,9 +1,5 @@
 import axios from "axios";
-import type {
-    CacheCheckResponse,
-    SimulationPayload,
-    SimulationResponse,
-} from "../types";
+import type { CacheCheckResponse, SimulationPayload } from "../types";
 
 // Base instance for Axios
 export const api = axios.create({
