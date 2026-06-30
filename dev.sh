@@ -6,8 +6,19 @@
 # Pressing Ctrl+C will kill both processes.
 # ==============================================================================
 
-# Trap keyboard interrupt (Ctrl+C) and kill all child processes in this group
-trap "echo -e '\n🛑 Shutting down both servers...'; kill 0; exit" INT TERM ERR EXIT
+# Cleanup function
+cleanup() {
+    # 1. Reset the trap to prevent infinite recursion
+    trap - INT TERM ERR EXIT
+    
+    echo -e '\n🛑 Shutting down both servers...'
+    
+    # 2. Kill all processes in the current process group
+    kill 0
+}
+
+# Bind the cleanup function to the signals
+trap cleanup INT TERM ERR EXIT
 
 echo "🚀 [1/2] Starting Julia API Server on port 8080..."
 julia scripts/server_dashboard.jl &

@@ -14,8 +14,19 @@ using experiments_NeuralOperators.Solvers
 using experiments_NeuralOperators.LRSchedulers
 include("run_all_models.jl")
 
-# Global dictionary to track the active simulations status (cancelled)
+# PRODUCER
+# Keep the session_id also if the web task get refreshed. Doesn't depend from the WebSocket
+# Keep track of running background tasks (Simulations)
 const ACTIVE_TASKS = Dict{String,Task}()
+
+# PRODUCER CHANNEL
+# Keep track of the message queues for each session (Buffer: 1000 messages)
+const SESSION_CHANNELS = Dict{String,Channel{String}}()
+
+# CONSUMER (light task, from channel to webSocket)
+# Killed when web task get killed or refreshed, new one created for the new WebSocket
+# Keep track of the WebSocket sender tasks to ensure type-stability
+const SENDER_TASKS = Dict{String,Task}()
 
 # CORS Middleware
 # Required during development because Vite runs on port 5173
@@ -109,79 +120,152 @@ end
 
 # Endpoint WebSocket
 @websocket "/ws/simulate" function (ws::HTTP.WebSocket)
-    # Generate unique ID for the connection/simulation
-    session_id = string(uuid4())
+    local session_id = nothing
 
     try
         for msg in ws
             payload = JSON3.read(msg)
+            action = payload["action"]
 
-            if payload["action"] == "start"
-                # Start the pipeline in a new thread to keep the WebSocket working
-                t = Threads.@spawn begin
-                    try
-                        # Callback function to send logs to the frontend
-                        log_cb = (info) -> HTTP.WebSockets.send(ws, JSON3.write(info))
+            # START or RECONNECT logic
+            if action == "start" || action == "reconnect"
+                # Safely extract session_id, falling back to a new UUID if missing or explicitly null
+                if haskey(payload, "session_id") && payload["session_id"] !== nothing
+                    session_id = String(payload["session_id"])
+                else
+                    session_id = string(uuid4())
+                end
 
-                        log_cb(Dict("type" => "status", "stage" => "Configuration received..."))
+                # Send the session ID back to the client immediately
+                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "session_info", "session_id" => session_id)))
 
-                        fem_config, solver, eval_config = build_configs(payload["data"])
+                if action == "start" && !haskey(ACTIVE_TASKS, session_id)
+                    # Create a channel with a buffer of 1000 messages
+                    SESSION_CHANNELS[session_id] = Channel{String}(1000)
 
-                        # Pass the callback and the cancellation flagto the pipeline
-                        data_hash, model_hash, eval_hash = run_pipeline(
-                            solver, fem_config, eval_config;
-                            log_cb=log_cb
-                        )
+                    t = Threads.@spawn begin
+                        try
+                            # Non-blocking logger: pushes to channel, drops oldest if full
+                            log_cb = (info) -> begin
+                                if haskey(SESSION_CHANNELS, session_id)
+                                    ch = SESSION_CHANNELS[session_id]
+                                    if length(ch.data) >= ch.sz_max
+                                        take!(ch) # Prevent blocking the simulation
+                                    end
+                                    put!(ch, JSON3.write(info))
+                                end
+                            end
 
-                        solver_name = get_solver_name(solver)
-                        image_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).png")
+                            log_cb(Dict("type" => "status", "stage" => "Configuration received..."))
 
-                        # Read the image bytes and encode to Base64 Data URI
-                        if isfile(image_path)
-                            image_b64 = base64encode(read(image_path))
-                            image_url = "data:image/png;base64," * image_b64
-                        else
-                            error("Image not found on disk after generation")
+                            fem_config, solver, eval_config = build_configs(payload["data"])
+
+                            data_hash, model_hash, eval_hash = run_pipeline(
+                                solver, fem_config, eval_config;
+                                log_cb=log_cb
+                            )
+
+                            solver_name = get_solver_name(solver)
+                            image_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).png")
+
+                            if isfile(image_path)
+                                image_b64 = base64encode(read(image_path))
+                                image_url = "data:image/png;base64," * image_b64
+                            else
+                                error("Image not found on disk after generation")
+                            end
+
+                            log_cb(Dict(
+                                "type" => "success",
+                                "data_hash" => data_hash,
+                                "model_hash" => model_hash,
+                                "eval_hash" => eval_hash,
+                                "image_url" => image_url
+                            ))
+                        catch e
+                            if e isa InterruptException || (e isa TaskFailedException && occursin("InterruptException", string(e)))
+                                if haskey(SESSION_CHANNELS, session_id)
+                                    put!(SESSION_CHANNELS[session_id], JSON3.write(Dict("type" => "error", "message" => "Simulation interrupted by the user.")))
+                                end
+                            else
+                                @error "Simulation failed" exception=(e, catch_backtrace())
+                                if haskey(SESSION_CHANNELS, session_id)
+                                    put!(SESSION_CHANNELS[session_id], JSON3.write(Dict("type" => "error", "message" => sprint(showerror, e))))
+                                end
+                            end
+                        finally
+                            # Cleanup
+                            delete!(ACTIVE_TASKS, session_id)
+                            # Close the channel to automatically terminate the sender_task loop
+                            if haskey(SESSION_CHANNELS, session_id)
+                                close(SESSION_CHANNELS[session_id])
+                                delete!(SESSION_CHANNELS, session_id)
+                            end
                         end
+                    end
+                    ACTIVE_TASKS[session_id] = t
+                end
 
-                        log_cb(Dict(
-                            "type" => "success",
-                            "data_hash" => data_hash,
-                            "model_hash" => model_hash,
-                            "eval_hash" => eval_hash,
-                            "image_url" => image_url
-                        ))
-                    catch e
-                        # Check if the error is the manual interruption
-                        if e isa InterruptException
-                            HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "error", "message" => "Simulation interrupted by the user.")))
-                        else
-                            @error "Simulation failed" exception=(e, catch_backtrace())
-                            HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "error", "message" => sprint(showerror, e))))
+                # Kill existing sender task for this socket if any
+                if haskey(SENDER_TASKS, session_id)
+                    old_sender = SENDER_TASKS[session_id]
+                    if !istaskdone(old_sender)
+                        try
+                            Base.throwto(old_sender, InterruptException())
+                        catch
+                            # Ignore errors when killing the old sender
                         end
-                    finally
-                        # Clean up the task registry when done or failed
-                        delete!(ACTIVE_TASKS, session_id)
                     end
                 end
 
-                # Register the task so we can kill it later
-                ACTIVE_TASKS[session_id] = t
+                # Start the async Sender Task that streams from Channel to WebSocket
+                SENDER_TASKS[session_id] = Threads.@spawn begin
+                    try
+                        if haskey(SESSION_CHANNELS, session_id)
+                            ch = SESSION_CHANNELS[session_id]
+                            for log_msg in ch
+                                if HTTP.WebSockets.isclosed(ws)
+                                    break
+                                end
+                                HTTP.WebSockets.send(ws, log_msg)
+                            end
+                        end
+                    catch
+                        # Ignore closed stream errors securely
+                    end
+                end
 
-            elseif payload["action"] == "stop"
-                if haskey(ACTIVE_TASKS, session_id)
-                    println(">>> User requested abort for session: $session_id <<<")
-                    # Inject InterruptException into the running Task
-                    schedule(ACTIVE_TASKS[session_id], InterruptException(), error=true)
+            elseif action == "stop"
+                if session_id !== nothing && haskey(ACTIVE_TASKS, session_id)
+                    @info "User requested abort for session: $session_id"
+                    t_abort = ACTIVE_TASKS[session_id]
+
+                    Threads.@spawn begin
+                        if !istaskdone(t_abort)
+                            try
+                                Base.throwto(t_abort, InterruptException())
+                            catch err
+                                @warn "Graceful interruption failed: $err"
+                            end
+                        end
+                    end
                 end
             end
         end
     finally
-        # If the user closes the browser/tab, kill the task to free up resources
-        if haskey(ACTIVE_TASKS, session_id)
-            schedule(ACTIVE_TASKS[session_id], InterruptException(), error=true)
-            delete!(ACTIVE_TASKS, session_id)
+        # Only kill the sender task. Leave the simulation task running!
+        if session_id !== nothing && haskey(SENDER_TASKS, session_id)
+            s_task = SENDER_TASKS[session_id]
+            if !istaskdone(s_task)
+                try
+                    Base.throwto(s_task, InterruptException())
+                catch
+                    # Ignore cleanup errors
+                end
+            end
+            delete!(SENDER_TASKS, session_id)
         end
+        @info "WebSocket disconnected for session: $(session_id !== nothing ? session_id : "unknown")"
     end
 end
 

@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -6,33 +5,28 @@ import {
     Loader2,
     Play,
     AlertCircle,
-    CheckCircle2,
-    CircleDashed,
     Brain,
     Database,
     LineChart,
     XCircle,
-    Activity,
-    Server,
 } from "lucide-react";
 
 // Schemas & Types
 import { formSchema, defaultValues } from "./schemas/simulation";
 import type { SimulationFormValues } from "./schemas/simulation";
-import {
-    type CacheCheckResponse,
-    type SimulationPayload,
-    type SimulationResponse,
-} from "./types";
-
-// API
-import { checkRegistry, pingServer } from "./api";
+import { type SimulationPayload } from "./types";
 
 // Components
 import FEMConfig from "./components/forms/FEMConfig";
 import ModelConfig from "./components/forms/ModelConfig";
 import EvalConfig from "./components/forms/EvalConfig";
 import Results from "./components/Results";
+
+// Custom Hooks
+import { useServerCache } from "./hooks/useServerCache";
+import { useSimulationSocket } from "./hooks/useSimulationWebSocket";
+import ServerConnectionScreen from "./components/ui/ServerConnectionScreen";
+import CacheBadge from "./components/ui/CacheBadge";
 
 // Helper: Build the payload
 const buildPayload = (data: SimulationFormValues): SimulationPayload => {
@@ -106,284 +100,36 @@ function App() {
         defaultValues: defaultValues,
     });
 
-    // State
-    const [serverStatus, setServerStatus] = useState<
-        "connecting" | "connected" | "disconnected"
-    >("connecting");
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [result, setResult] = useState<SimulationResponse | null>(null);
-    const [cacheStatus, setCacheStatus] = useState<CacheCheckResponse | null>(
-        null,
-    );
-    const [isCheckingCache, setIsCheckingCache] = useState(false);
-
-    // WebSocket
-    const wsRef = useRef<WebSocket | null>(null);
-    const [statusMessage, setStatusMessage] = useState<string>("");
-    const [progress, setProgress] = useState<{
-        epoch: number;
-        total: number;
-        loss: number;
-        eta: number;
-    } | null>(null);
-
     // Watch all the form values
     const formValues = methods.watch();
+    const isValid = formSchema.safeParse(formValues).success;
+    const currentPayload = isValid
+        ? buildPayload(formValues as SimulationFormValues)
+        : null;
 
-    // Effects
+    // Custom hooks
 
-    // Ping to check the server
-    useEffect(() => {
-        let isMounted = true;
-        let retries = 0;
-        const MAX_RETRIES = 48; // 48 * 2.5s = 120 seconds
+    const { serverStatus, cacheStatus, isCheckingCache } = useServerCache(
+        currentPayload,
+        isValid,
+    );
+    const {
+        isLoading,
+        error,
+        result,
+        statusMessage,
+        progress,
+        startSimulation,
+        abortSimulation,
+    } = useSimulationSocket(serverStatus);
 
-        const checkServer = async () => {
-            const isAlive = await pingServer();
-            if (!isMounted) return;
-
-            if (isAlive) {
-                if (serverStatus !== "connected") {
-                    setServerStatus("connected");
-                }
-                retries = 0;
-            } else {
-                retries++;
-
-                setServerStatus((prev) => {
-                    // If previously connected => connection lost
-                    if (prev === "connected") return "disconnected";
-
-                    // If waiting, set to connection lost only after 120 seconds
-                    if (prev === "connecting" && retries > MAX_RETRIES)
-                        return "disconnected";
-
-                    // Otherwise show "Booting Engine..."
-                    return prev;
-                });
-            }
-        };
-
-        // Do the first check immediately
-        checkServer();
-
-        // Set dynamically the timeout to do the check every 2.5 seconds
-        const pollingInterval = serverStatus === "connected" ? 15000 : 2500;
-        const intervalId = setInterval(checkServer, pollingInterval);
-
-        return () => {
-            isMounted = false;
-            clearInterval(intervalId);
-        };
-    }, [serverStatus]);
-
-    // Debounce for the cache check
-    useEffect(() => {
-        // Check if the server is connected
-        if (serverStatus !== "connected") return;
-
-        const validation = formSchema.safeParse(formValues);
-
-        // If the user is typing validation fails
-        if (!validation.success) {
-            setCacheStatus(null);
-            return;
-        }
-
-        // Set a timer of 600ms
-        const timer = setTimeout(async () => {
-            setIsCheckingCache(true);
-            try {
-                const payload = buildPayload(
-                    formValues as SimulationFormValues,
-                );
-                const res = await checkRegistry(payload);
-                if (res.status === "success") {
-                    setCacheStatus(res);
-                }
-            } catch (err) {
-                console.error("Error while checking the cache registry:", err);
-            } finally {
-                setIsCheckingCache(false);
-            }
-        }, 600);
-
-        // Cleanup function: clear the timer
-        return () => clearTimeout(timer);
-    }, [JSON.stringify(formValues), serverStatus]); // stringify to deeply compare the object
-
-    // Submit handler via WebSocket
     const onSubmit = (data: SimulationFormValues) => {
-        setIsLoading(true);
-        setError(null);
-        setResult(null);
-        setProgress(null);
-        setStatusMessage("Connecting to Julia Engine...");
-
-        const payload = buildPayload(data);
-
-        // Initialize WebSocket connection
-        const socket = new WebSocket("ws://127.0.0.1:8080/ws/simulate");
-        wsRef.current = socket;
-
-        socket.onopen = () => {
-            setStatusMessage("Starting pipeline...");
-            socket.send(JSON.stringify({ action: "start", data: payload }));
-        };
-
-        socket.onmessage = (event) => {
-            const res = JSON.parse(event.data);
-
-            switch (res.type) {
-                case "status":
-                    setStatusMessage(res.stage || res.message);
-                    break;
-                case "progress":
-                    setStatusMessage(res.stage);
-                    setProgress({
-                        epoch: res.epoch,
-                        total: res.total_epochs,
-                        loss: res.loss,
-                        eta: res.eta,
-                    });
-                    break;
-                case "success":
-                    setResult(res);
-                    setIsLoading(false);
-                    setStatusMessage("");
-                    socket.close();
-                    break;
-                case "error":
-                    setError(res.message);
-                    setIsLoading(false);
-                    setStatusMessage("");
-                    socket.close();
-                    break;
-            }
-        };
-
-        socket.onerror = () => {
-            setError("WebSocket connection failed or lost.");
-            setIsLoading(false);
-        };
-
-        socket.onclose = () => {
-            // Safety check: if closed unexpectedly while loading
-            if (isLoading) {
-                setIsLoading(false);
-            }
-        };
-    };
-
-    // Handler to manually abort the pipeline
-    const handleAbort = () => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ action: "stop" }));
-            setStatusMessage("Aborting... Waiting for Julia threads to yield.");
-        }
-    };
-
-    // Logic to determinate the current status of the single badge
-    const getBadgeState = (exists?: boolean) => {
-        if (isCheckingCache) return "loading";
-        if (exists === true) return "exists";
-        if (exists === false) return "missing";
-        return "idle"; // Just loaded page
-    };
-
-    // Component to render the cache status badge
-    const CacheBadge = ({
-        state,
-        label,
-        icon: Icon,
-    }: {
-        state: "exists" | "missing" | "loading" | "idle";
-        label: string;
-        icon: any;
-    }) => {
-        let style = "bg-slate-100 text-slate-400 border border-slate-200"; // default style (idle)
-        let StatusIcon = CircleDashed;
-
-        if (state === "loading") {
-            style =
-                "bg-blue-50 text-blue-600 border border-blue-200 animate-pulse";
-            StatusIcon = Loader2;
-        } else if (state === "exists") {
-            style = "bg-emerald-100 text-emerald-700 border border-emerald-200";
-            StatusIcon = CheckCircle2;
-        } else if (state === "missing") {
-            style = "bg-rose-50 text-rose-600 border border-rose-200";
-            StatusIcon = XCircle;
-        }
-
-        return (
-            <div
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-300 ${style}`}
-            >
-                <Icon size={14} />
-                <span>{label}</span>
-                <StatusIcon
-                    size={14}
-                    className={
-                        state === "loading" ? "animate-spin ml-1" : "ml-1"
-                    }
-                />
-            </div>
-        );
+        startSimulation(buildPayload(data));
     };
 
     // Initial loader and disconnections
     if (serverStatus !== "connected") {
-        return (
-            <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-                <div className="bg-white rounded-2xl shadow-xl p-10 max-w-md w-full text-center flex flex-col items-center animate-in fade-in zoom-in duration-500">
-                    <div className="relative mb-6">
-                        <BrainCircuit
-                            size={64}
-                            className="text-blue-600 opacity-20"
-                        />
-                        <Activity
-                            size={32}
-                            className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${serverStatus === "connecting" ? "text-blue-600 animate-pulse" : "text-red-500"}`}
-                        />
-                    </div>
-
-                    <h2 className="text-2xl font-bold text-slate-800 mb-2">
-                        {serverStatus === "connecting"
-                            ? "Booting Engine..."
-                            : "Connection Lost"}
-                    </h2>
-
-                    <p className="text-slate-500 text-sm mb-8">
-                        {serverStatus === "connecting"
-                            ? "Waking up the Julia backend and JIT compiling libraries. This can take a few minutes on the first run."
-                            : "Cannot reach the Julia server. Please ensure Oxygen.jl is running on port 8080."}
-                    </p>
-
-                    <div className="flex items-center justify-center gap-3 text-sm font-semibold bg-slate-50 px-6 py-3 rounded-xl border border-slate-100 w-full">
-                        {serverStatus === "connecting" ? (
-                            <>
-                                <Loader2
-                                    size={16}
-                                    className="text-blue-500 animate-spin"
-                                />
-                                <span className="text-blue-700">
-                                    Waiting for 127.0.0.1:8080...
-                                </span>
-                            </>
-                        ) : (
-                            <>
-                                <Server size={16} className="text-red-500" />
-                                <span className="text-red-700">
-                                    Server Offline
-                                </span>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </div>
-        );
+        return <ServerConnectionScreen status={serverStatus} />;
     }
 
     return (
@@ -415,17 +161,20 @@ function App() {
                     </span>
                     <div className="flex gap-2">
                         <CacheBadge
-                            state={getBadgeState(cacheStatus?.data_exists)}
+                            exists={cacheStatus?.data_exists}
+                            isChecking={isCheckingCache}
                             label="FEM Data"
                             icon={Database}
                         />
                         <CacheBadge
-                            state={getBadgeState(cacheStatus?.model_exists)}
+                            exists={cacheStatus?.model_exists}
+                            isChecking={isCheckingCache}
                             label="Model"
                             icon={Brain}
                         />
                         <CacheBadge
-                            state={getBadgeState(cacheStatus?.eval_exists)}
+                            exists={cacheStatus?.eval_exists}
+                            isChecking={isCheckingCache}
                             label="Evaluation"
                             icon={LineChart}
                         />
@@ -448,7 +197,6 @@ function App() {
                         onSubmit={methods.handleSubmit(onSubmit)}
                         className="space-y-8"
                     >
-                        {/* Grid structure for the sub-components */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <FEMConfig isLoading={isLoading} />
                             <div className="space-y-6 flex flex-col">
@@ -457,7 +205,7 @@ function App() {
                             </div>
                         </div>
 
-                        {/* Submit or Abort Buttons Area */}
+                        {/* Submit / Abort Area */}
                         <div className="border-t pt-6 flex flex-col lg:flex-row justify-end items-center gap-4">
                             {isLoading && (
                                 <div className="flex-1 w-full bg-slate-50 border border-slate-100 rounded-xl p-4 flex flex-col gap-3">
@@ -475,8 +223,6 @@ function App() {
                                             </span>
                                         )}
                                     </div>
-
-                                    {/* Progress details and Bar (Visible only during Neural Training) */}
                                     {progress && (
                                         <div className="space-y-1.5 animate-in fade-in duration-300">
                                             <div className="flex justify-between text-xs text-slate-500 font-medium px-1">
@@ -507,7 +253,7 @@ function App() {
                             {isLoading ? (
                                 <button
                                     type="button"
-                                    onClick={handleAbort}
+                                    onClick={abortSimulation}
                                     className="w-full lg:w-auto font-bold py-4 px-8 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg bg-red-600 hover:bg-red-700 text-white hover:shadow-red-500/30 shrink-0"
                                 >
                                     <XCircle size={20} />
@@ -527,7 +273,7 @@ function App() {
                 </FormProvider>
             </div>
 
-            {/* Results component */}
+            {/* Results */}
             {result && result.eval_hash && result.image_url && !isLoading && (
                 <Results
                     plotHash={result.eval_hash}
