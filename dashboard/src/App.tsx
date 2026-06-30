@@ -1,7 +1,7 @@
+import gridapLogo from "./assets/logo-gridap.png";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-    BrainCircuit,
     Loader2,
     Play,
     AlertCircle,
@@ -138,7 +138,11 @@ function App() {
                 {/* Header */}
                 <div className="mb-4 border-b pb-6">
                     <h1 className="text-3xl font-extrabold text-slate-800 flex items-center gap-3">
-                        <BrainCircuit className="text-blue-600" size={32} />
+                        <img
+                            src={gridapLogo}
+                            alt="Gridap Logo"
+                            className="h-10 w-auto object-contain"
+                        />
                         GridapROMs Orchestrator
                     </h1>
                     <p className="text-slate-500 mt-2">
