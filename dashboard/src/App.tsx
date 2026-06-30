@@ -9,6 +9,7 @@ import {
     Database,
     LineChart,
     XCircle,
+    CheckCircle,
 } from "lucide-react";
 
 // Schemas & Types
@@ -254,11 +255,44 @@ function App() {
                                 </div>
                             )}
 
+                            {/* SUCCESS FEEDBACK BLOCK */}
+                            {!isLoading && result && (
+                                <div className="flex-1 w-full bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between shadow-sm animate-in fade-in duration-500">
+                                    <div className="flex items-center gap-3">
+                                        <CheckCircle
+                                            className="text-emerald-600 shrink-0"
+                                            size={24}
+                                        />
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-bold text-emerald-800">
+                                                Pipeline Completed Successfully!
+                                            </span>
+                                            <span className="text-xs text-emerald-600 font-medium">
+                                                Scroll down to view the
+                                                zero-shot evaluation plots.
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            window.scrollTo({
+                                                top: document.body.scrollHeight,
+                                                behavior: "smooth",
+                                            })
+                                        }
+                                        className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                        View Results
+                                    </button>
+                                </div>
+                            )}
+
                             {isLoading ? (
                                 <button
                                     type="button"
                                     onClick={abortSimulation}
-                                    className="w-full lg:w-auto font-bold py-4 px-8 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg bg-red-600 hover:bg-red-700 text-white hover:shadow-red-500/30 shrink-0"
+                                    className="w-full lg:w-auto font-bold py-4 px-8 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg bg-red-600 hover:bg-red-700 text-white hover:shadow-red-500/30 shrink-0 cursor-pointer"
                                 >
                                     <XCircle size={20} />
                                     Abort Pipeline
@@ -266,7 +300,7 @@ function App() {
                             ) : (
                                 <button
                                     type="submit"
-                                    className="w-full lg:w-auto font-bold py-4 px-10 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg bg-slate-900 hover:bg-blue-600 text-white hover:shadow-blue-500/30 shrink-0"
+                                    className="w-full lg:w-auto font-bold py-4 px-10 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg bg-slate-900 hover:bg-blue-600 text-white hover:shadow-blue-500/30 shrink-0 cursor-pointer"
                                 >
                                     <Play size={20} fill="currentColor" />
                                     Launch Pipeline

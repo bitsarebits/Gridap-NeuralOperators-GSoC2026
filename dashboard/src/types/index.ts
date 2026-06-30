@@ -57,7 +57,6 @@ export interface SimulationPayload {
 
 // Julia Response
 export interface SimulationResponse {
-    status: "success" | "error";
     message?: string;
     data_hash?: string;
     model_hash?: string;

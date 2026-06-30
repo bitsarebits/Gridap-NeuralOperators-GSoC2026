@@ -44,7 +44,13 @@ export const useSimulationSocket = (
         (action: "start" | "reconnect", payload?: SimulationPayload) => {
             setIsLoading(true);
             setError(null);
-            if (action === "start") setResult(null);
+
+            // Cleanup
+            if (action === "start") {
+                setResult(null);
+                setProgress(null);
+                setStatusMessage("");
+            }
 
             const socket = new WebSocket(WS_URL);
             wsRef.current = socket;
@@ -92,9 +98,13 @@ export const useSimulationSocket = (
                         });
                         break;
                     case "success":
-                        setResult(res);
+                        setResult({
+                            data_hash: res.data_hash,
+                            model_hash: res.model_hash,
+                            eval_hash: res.eval_hash,
+                            image_url: res.image_url,
+                        });
                         setIsLoading(false);
-                        setStatusMessage("");
                         sessionStorage.removeItem(SESSION_KEY); // successfully terminated: session cleanup
                         socket.close();
                         break;
@@ -102,6 +112,8 @@ export const useSimulationSocket = (
                         setError(res.message);
                         setIsLoading(false);
                         setStatusMessage("");
+                        setResult(null); // Clear previous success results on error
+                        setProgress(null); // Clear previous progress charts on error
                         sessionStorage.removeItem(SESSION_KEY); // Error: session cleanup
                         socket.close();
                         break;
