@@ -1,3 +1,14 @@
+import Pkg
+
+# @__DIR__ is always 'experiments_NeuralOperators/scripts'
+# The project root for these experiments is one level up
+const EXPERIMENT_ROOT = joinpath(@__DIR__, "..")
+
+@info "Bootstrapping Julia environment..."
+Pkg.activate(EXPERIMENT_ROOT)
+Pkg.instantiate()
+
+
 using DrWatson
 
 @quickactivate :experiments_NeuralOperators

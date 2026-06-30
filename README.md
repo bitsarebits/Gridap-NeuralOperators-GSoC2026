@@ -88,7 +88,11 @@ This project includes a React web dashboard to orchestrate experiments and visua
 1. Open your terminal in the root of this subfolder.
 2. Launch the integrated web-server script using Julia:
    ```bash
-   julia --project scripts/server_dashboard.jl
+   # If running the script from the repository root
+   julia experiments_NeuralOperators/scripts/server_dashboard.jl
+
+   # If running the script from experiments_NeuralOperators/ folder
+   julia scripts/server_dashboard.jl
    ```
 3. Open your web browser and navigate to:
    ```text
