@@ -22,8 +22,14 @@ interface SimulationProgress {
 export const useSimulationSocket = (
     serverStatus: "connected" | "connecting" | "disconnected",
 ) => {
-    // State
+    // References
     const wsRef = useRef<WebSocket | null>(null);
+    const promiseRef = useRef<{
+        resolve: (value: SimulationResponse) => void;
+        reject: (reason: Error) => void;
+    } | null>(null);
+
+    // State
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<SimulationResponse | null>(null);
@@ -41,9 +47,18 @@ export const useSimulationSocket = (
 
     // Internal function to handle the socket opening
     const connectSocket = useCallback(
-        (action: "start" | "reconnect", payload?: SimulationPayload) => {
+        (
+            action: "start" | "reconnect",
+            payload?: SimulationPayload,
+            resolveCb?: (value: SimulationResponse) => void,
+            rejectCb?: (reason: Error) => void,
+        ) => {
             setIsLoading(true);
             setError(null);
+
+            if (resolveCb && rejectCb) {
+                promiseRef.current = { resolve: resolveCb, reject: rejectCb };
+            }
 
             // Cleanup
             if (action === "start") {
@@ -98,15 +113,22 @@ export const useSimulationSocket = (
                         });
                         break;
                     case "success":
-                        setResult({
+                        const successData = {
                             data_hash: res.data_hash,
                             model_hash: res.model_hash,
                             eval_hash: res.eval_hash,
                             image_url: res.image_url,
-                        });
+                        };
+                        setResult(successData);
                         setIsLoading(false);
                         sessionStorage.removeItem(SESSION_KEY); // successfully terminated: session cleanup
                         socket.close();
+
+                        // Resolve the Promise so onSubmit can continue!
+                        if (promiseRef.current) {
+                            promiseRef.current.resolve(successData);
+                            promiseRef.current = null;
+                        }
                         break;
                     case "error":
                         setError(res.message);
@@ -116,13 +138,24 @@ export const useSimulationSocket = (
                         setProgress(null); // Clear previous progress charts on error
                         sessionStorage.removeItem(SESSION_KEY); // Error: session cleanup
                         socket.close();
+
+                        // Reject the Promise so onSubmit catches the error
+                        if (promiseRef.current) {
+                            promiseRef.current.reject(new Error(res.message));
+                            promiseRef.current = null;
+                        }
                         break;
                 }
             };
 
             socket.onerror = () => {
-                setError("WebSocket connection failed or lost.");
+                const errMsg = "WebSocket connection failed or lost.";
+                setError(errMsg);
                 setIsLoading(false);
+                if (promiseRef.current) {
+                    promiseRef.current.reject(new Error(errMsg));
+                    promiseRef.current = null;
+                }
             };
 
             socket.onclose = (event) => {
@@ -131,6 +164,14 @@ export const useSimulationSocket = (
                 if (!event.wasClean) {
                     setIsLoading(false);
                     setStatusMessage("");
+
+                    // In case of silent crashes, ensure reject
+                    if (promiseRef.current) {
+                        promiseRef.current.reject(
+                            new Error("Server crashed unexpectedly."),
+                        );
+                        promiseRef.current = null;
+                    }
                 }
             };
         },
@@ -146,8 +187,12 @@ export const useSimulationSocket = (
         }
     }, [serverStatus, connectSocket, isLoading]);
 
-    const startSimulation = (payload: SimulationPayload) => {
-        connectSocket("start", payload);
+    const startSimulation = (
+        payload: SimulationPayload,
+    ): Promise<SimulationResponse> => {
+        return new Promise((resolve, reject) => {
+            connectSocket("start", payload, resolve, reject);
+        });
     };
 
     const abortSimulation = () => {

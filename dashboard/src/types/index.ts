@@ -71,3 +71,21 @@ export interface CacheCheckResponse {
     model_exists: boolean;
     eval_exists: boolean;
 }
+
+export interface RegistryData {
+    data: Record<string, any>; // FEM configurations mapped by data_hash
+    models: Record<string, any>; // Model configurations mapped by model_hash
+    evaluations: Record<string, any>; // Evaluations mapped by eval_hash
+}
+
+export interface RegistryResponse {
+    status: "success" | "error";
+    data?: RegistryData;
+    message?: string;
+}
+
+export interface PlotResponse {
+    status: "success" | "error";
+    image_url?: string;
+    message?: string;
+}

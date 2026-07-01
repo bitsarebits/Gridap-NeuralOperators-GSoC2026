@@ -330,6 +330,51 @@ end
     end
 end
 
+# Endpoint to fetch the entire cache registry
+@get "/api/registry" function (req::HTTP.Request)
+    try
+        registry = HashRegistry.load_registry()
+        return JSON3.write(Dict("status" => "success", "data" => registry))
+    catch e
+        @error "Failed to load registry" exception=(e, catch_backtrace())
+        return HTTP.Response(
+            500,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => sprint(showerror, e)))
+        )
+    end
+end
+
+# Endpoint to Fetch a specific evaluation plot from disk as Base64
+@post "/api/get_evaluation_plot" function (req::HTTP.Request)
+    try
+        payload = JSON3.read(req.body)
+        eval_hash = String(payload["eval_hash"])
+        solver_type = lowercase(String(payload["solver_type"]))
+
+        image_path = plotsdir(solver_type, "eval_$(eval_hash).png")
+
+        if isfile(image_path)
+            image_b64 = base64encode(read(image_path))
+            image_url = "data:image/png;base64," * image_b64
+            return JSON3.write(Dict("status" => "success", "image_url" => image_url))
+        else
+            return HTTP.Response(
+                404,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict("status" => "error", "message" => "Plot image not found on disk."))
+            )
+        end
+    catch e
+        @error "Failed to retrieve evaluation plot" exception=(e, catch_backtrace())
+        return HTTP.Response(
+            400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => sprint(showerror, e)))
+        )
+    end
+end
+
 # Define the path to the React static build
 const BUILD_DIR = joinpath(@__DIR__, "..", "dashboard", "dist")
 

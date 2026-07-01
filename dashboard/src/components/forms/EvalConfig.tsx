@@ -24,7 +24,7 @@ export default function EvalConfig({ isLoading }: Props) {
                 </label>
                 <input
                     type="number"
-                    step="0.01"
+                    step="any"
                     disabled={isLoading}
                     {...register("sigma_test", { valueAsNumber: true })}
                     className="mt-1 w-full p-2 text-sm border border-amber-300 rounded bg-white disabled:opacity-50"
