@@ -5,10 +5,10 @@ import {
     ChevronRight,
     Loader2,
     AlertCircle,
-    Download,
 } from "lucide-react";
 import { fetchEvaluationPlot } from "../../api";
 import ShareButton from "../ui/ShareButton";
+import DownloadButton from "../ui/DownloadButton";
 
 interface Props {
     evalHash: string;
@@ -102,13 +102,11 @@ export default function EvaluationNode({
                             <div className="w-full max-w-3xl flex justify-end items-center gap-2 mt-3">
                                 <ShareButton evalHash={evalHash} />
 
-                                <a
-                                    href={plotImage}
-                                    download={`archived_eval_${evalHash}.png`}
-                                    className="text-[11px] font-bold bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer h-8.5"
-                                >
-                                    <Download size={12} /> Download Chart
-                                </a>
+                                <DownloadButton
+                                    imageUrl={plotImage}
+                                    fileName={`archived_eval_${evalHash}.png`}
+                                    text="Download Chart"
+                                />
                             </div>
                         </>
                     ) : (

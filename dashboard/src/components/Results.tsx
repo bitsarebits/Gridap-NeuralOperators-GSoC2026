@@ -1,3 +1,4 @@
+import DownloadButton from "./ui/DownloadButton";
 import ShareButton from "./ui/ShareButton";
 
 interface ResultsProps {
@@ -38,13 +39,10 @@ export default function Results({ plotHash, imageUrl }: ResultsProps) {
                 <div className="flex items-center gap-3">
                     <ShareButton evalHash={plotHash} />
 
-                    <a
-                        href={imageUrl}
-                        download={`evaluation_${plotHash}.png`}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-lg shadow-sm transition-colors flex items-center gap-2"
-                    >
-                        Download Plot
-                    </a>
+                    <DownloadButton
+                        imageUrl={imageUrl}
+                        fileName={`evaluation_${plotHash}.png`}
+                    />
                 </div>
             </div>
         </div>
