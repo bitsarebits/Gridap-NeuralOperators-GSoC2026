@@ -445,12 +445,15 @@ end
 
     # Verify the image exists locally
     image_path = plotsdir(solver_type, "eval_$(eval_hash).png")
-    if !isfile(image_path)
-        return HTTP.Response(
-            404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => "Evaluation plot not found on disk."))
-        )
+    data_path = datadir("sims", "data_$(data_hash).jld2")
+    model_path = datadir("models", solver_type, "model_$(model_hash).jld2")
+
+    if !isfile(image_path) || !isfile(data_path) || !isfile(model_path)
+        return HTTP.Response(404, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(
+                "status" => "error",
+                "message" => "Some required files (plot, data, or model) are missing from disk."
+            )))
     end
 
     # Generate Server-to-Server Token
@@ -484,16 +487,22 @@ end
         ))
     end
 
-    # Upload Plot to Cloud Storage
-    dest_name = "plots/$(eval_hash).png"
-    image_url = FirebaseREST.upload_to_storage(token, image_path, dest_name)
+    # Upload Data, Model and Plot to Cloud Storage
+    @info "Uploading evaluation plot..."
+    image_url = FirebaseREST.upload_to_storage(token, image_path, "plots/$(eval_hash).png"; content_type="image/png")
 
-    if isnothing(image_url)
-        return HTTP.Response(
-            500,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => "Failed to upload evaluation plot to Cloud Storage."))
-        )
+    @info "Uploading high-fidelity FEM data..."
+    data_url = FirebaseREST.upload_to_storage(token, data_path, "data/$(data_hash).jld2")
+
+    @info "Uploading Neural Operator weights..."
+    model_url = FirebaseREST.upload_to_storage(token, model_path, "models/$(model_hash).jld2")
+
+    if isnothing(image_url) || isnothing(data_url) || isnothing(model_url)
+        return HTTP.Response(500, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(
+                "status" => "error",
+                "message" => "Failed to upload one or more files to Cloud Storage."
+            )))
     end
 
     # Push Metadata to Firestore
@@ -509,7 +518,9 @@ end
         "fem_config" => data_config,
         "solver_config" => model_data["solver"],
         "eval_config" => eval_data["eval_config"],
-        "image_url" => image_url
+        "image_url" => image_url,
+        "data_url" => data_url,
+        "model_url" => model_url
     )
 
     success = FirebaseREST.push_to_firestore(token, "shared_experiments", eval_hash, doc_payload)

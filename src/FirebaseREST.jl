@@ -136,12 +136,13 @@ function check_document_exists(access_token::String, collection::String, documen
 end
 
 """
-    upload_to_storage(access_token::String, file_path::String, destination_name::String)
+    upload_to_storage(access_token::String, file_path::String, destination_name::String; content_type::String)
 
 Uploads a local file to Firebase Cloud Storage using the REST API.
+Default content_type::String="application/octet-stream" for generic binary.
 Returns the public download URL if successful.
 """
-function upload_to_storage(access_token::String, file_path::String, destination_name::String)
+function upload_to_storage(access_token::String, file_path::String, destination_name::String; content_type::String="application/octet-stream")
     cred = Auth.get_firebase_credentials()
     if isnothing(cred)
         return nothing
@@ -160,7 +161,7 @@ function upload_to_storage(access_token::String, file_path::String, destination_
 
     headers = [
         "Authorization" => "Bearer $access_token",
-        "Content-Type" => "image/png"
+        "Content-Type" => content_type
     ]
 
     file_bytes = read(file_path)
