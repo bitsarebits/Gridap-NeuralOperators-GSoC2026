@@ -4,6 +4,8 @@ module experiments_NeuralOperators
 include("Utils.jl")
 
 # base modules
+include("Auth.jl")
+include("FirebaseREST.jl")
 include("LRSchedulers.jl")
 include("Solvers.jl")
 include("HashRegistry.jl")
@@ -19,6 +21,6 @@ include("Inference.jl")
 include("Pipelines.jl")
 
 # Export submodules for the scripts
-export HashRegistry, DataGeneration, DeepONetArch, FNOArch, Pipelines, TrainingLoops, Inference, Utils, LRSchedulers, Solvers
+export HashRegistry, DataGeneration, DeepONetArch, FNOArch, Pipelines, TrainingLoops, Inference, Utils, LRSchedulers, Solvers, Auth, FirebaseREST
 
 end

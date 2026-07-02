@@ -19,11 +19,25 @@ using JSON3
 using Sockets
 using UUIDs
 using Base64
+using Dates
 
 using experiments_NeuralOperators
 using experiments_NeuralOperators.Solvers
 using experiments_NeuralOperators.LRSchedulers
+using experiments_NeuralOperators.Auth
+using experiments_NeuralOperators.FirebaseREST
 include("run_all_models.jl")
+
+# Check for credentials via autodiscovery
+const FIREBASE_CRED = Auth.get_firebase_credentials()
+const HAS_FIREBASE_ACCESS = !isnothing(FIREBASE_CRED)
+
+@info "Firebase Server-to-Server Auth Status: $(HAS_FIREBASE_ACCESS ? "ENABLED" : "DISABLED")"
+
+# Endpoint for the React frontend capability check
+@get "/api/status" function (req::HTTP.Request)
+    return JSON3.write(Dict("canShare" => HAS_FIREBASE_ACCESS))
+end
 
 # PRODUCER
 # Keep the session_id also if the web task get refreshed. Doesn't depend from the WebSocket
@@ -371,6 +385,148 @@ end
             400,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict("status" => "error", "message" => sprint(showerror, e)))
+        )
+    end
+end
+
+@post "/api/share" function (req::HTTP.Request)
+    # Global Capability Check
+    if !HAS_FIREBASE_ACCESS
+        return HTTP.Response(
+            403,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Firebase publishing is disabled. Missing credentials."))
+        )
+    end
+
+    # Parse Payload
+    local payload::Dict{String,Any}
+    try
+        payload = JSON3.read(req.body, Dict{String,Any})
+    catch e
+        return HTTP.Response(
+            400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Invalid JSON payload."))
+        )
+    end
+
+    eval_hash = get(payload, "eval_hash", nothing)
+
+    if isnothing(eval_hash) || isempty(eval_hash)
+        return HTTP.Response(
+            400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Missing eval_hash parameter."))
+        )
+    end
+
+    # Integrity & Dependency Check via HashRegistry
+    registry = HashRegistry.load_registry()
+
+    if !haskey(registry["evaluations"], eval_hash)
+        @warn "Tamper attempt or missing cache for eval_hash: $eval_hash"
+        return HTTP.Response(
+            404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Evaluation hash not found in local registry. Cannot verify mathematical integrity."))
+        )
+    end
+
+    # Reconstruct the full computational graph from the registry
+    eval_data = registry["evaluations"][eval_hash]
+    model_hash = eval_data["model_hash"]
+    model_data = registry["models"][model_hash]
+    data_hash = model_data["data_hash"]
+    data_config = registry["data"][data_hash]
+
+    solver_type_raw = model_data["solver_type"]
+    solver_type = lowercase(solver_type_raw)
+
+    # Verify the image exists locally
+    image_path = plotsdir(solver_type, "eval_$(eval_hash).png")
+    if !isfile(image_path)
+        return HTTP.Response(
+            404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Evaluation plot not found on disk."))
+        )
+    end
+
+    # Generate Server-to-Server Token
+    @info "Starting Firebase publishing process for experiment $eval_hash..."
+    token = FirebaseREST.get_access_token()
+
+    if isnothing(token)
+        return HTTP.Response(
+            500,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Failed to authenticate securely with Firebase."))
+        )
+    end
+
+    if FirebaseREST.check_document_exists(token, "shared_experiments", eval_hash)
+        @info "Experiment $eval_hash is already in the global gallery. Skipping upload."
+
+        # Get the project_id to reconstruct the image URL
+        cred = Auth.get_firebase_credentials()
+        project_id = cred["project_id"]
+        bucket_name = "$(project_id).firebasestorage.app"
+
+        # reconstruct the URL
+        reconstructed_url = "https://firebasestorage.googleapis.com/v0/b/$(bucket_name)/o/plots%2F$(eval_hash).png?alt=media"
+
+        return JSON3.write(Dict(
+            "status" => "success",
+            "message" => "Experiment is already published in the gallery!",
+            "public_url" => reconstructed_url,
+            "already_exists" => true
+        ))
+    end
+
+    # Upload Plot to Cloud Storage
+    dest_name = "plots/$(eval_hash).png"
+    image_url = FirebaseREST.upload_to_storage(token, image_path, dest_name)
+
+    if isnothing(image_url)
+        return HTTP.Response(
+            500,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Failed to upload evaluation plot to Cloud Storage."))
+        )
+    end
+
+    # Push Metadata to Firestore
+    doc_payload = Dict(
+        "experiment_id" => eval_hash,
+        "timestamp" => Dates.format(now(UTC), "yyyy-mm-ddTHH:MM:SSZ"),
+        "model_type" => model_data["solver_type"],
+        "hashes" => Dict(
+            "data_hash" => data_hash,
+            "model_hash" => model_hash,
+            "eval_hash" => eval_hash
+        ),
+        "fem_config" => data_config,
+        "solver_config" => model_data["solver"],
+        "eval_config" => eval_data["eval_config"],
+        "image_url" => image_url
+    )
+
+    success = FirebaseREST.push_to_firestore(token, "shared_experiments", eval_hash, doc_payload)
+
+    if success
+        @info "Publishing completed successfully for $eval_hash."
+        return JSON3.write(Dict(
+            "status" => "success",
+            "message" => "Experiment published successfully to the global gallery!",
+            "public_url" => image_url,
+            "already_exists" => false
+        ))
+    else
+        return HTTP.Response(
+            500,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Failed to push structured metadata to Firestore."))
         )
     end
 end

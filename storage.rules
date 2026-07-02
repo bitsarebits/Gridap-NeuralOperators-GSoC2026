@@ -1,0 +1,12 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      // Public read-only access for evaluating ROM plots.
+      // Write access is exclusively granted via the Julia backend.
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

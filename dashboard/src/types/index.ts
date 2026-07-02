@@ -89,3 +89,16 @@ export interface PlotResponse {
     image_url?: string;
     message?: string;
 }
+
+// Share simulations types (Firebase)
+
+export interface SharePayload {
+    eval_hash: string;
+}
+
+export interface ShareResponse {
+    status: string;
+    message: string;
+    public_url?: string;
+    already_exists?: boolean;
+}

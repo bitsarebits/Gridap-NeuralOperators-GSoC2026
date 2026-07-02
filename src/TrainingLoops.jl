@@ -7,6 +7,25 @@ using ..Solvers, ..DeepONetArch, ..FNOArch, ..Utils, ..LRSchedulers
 
 export train_deeponet!, train_fno!, prepare_and_train
 
+# Helper
+"""
+    format_eta(eta_seconds::Real) -> String
+
+Formats a duration in seconds into a human-readable HH:MM:SS or MM:SS string.
+"""
+function format_eta(eta_seconds::Real)
+    eta_sec = round(Int, eta_seconds)
+    h = div(eta_sec, 3600)
+    m = div(rem(eta_sec, 3600), 60)
+    s = rem(eta_sec, 60)
+
+    if h > 0
+        return "$(lpad(h, 2, '0')):$(lpad(m, 2, '0')):$(lpad(s, 2, '0'))"
+    else
+        return "$(lpad(m, 2, '0')):$(lpad(s, 2, '0'))"
+    end
+end
+
 # ------------- TRAINING FUNCTIONS --------------
 
 """
@@ -68,13 +87,13 @@ function train_deeponet!(
                 println("Epoch: $epoch \t Loss: $(Float32(loss))")
 
             elseif epoch % 500 == 0
-                println("Epoch: $epoch \t Loss: $(Float32(loss))")
-
                 elapsed_fast = time() - t_start_fast
                 time_per_epoch = elapsed_fast / (epoch - 1)
                 epochs_left = epochs - epoch
                 eta_seconds = time_per_epoch * epochs_left
 
+                eta_str = format_eta(eta_seconds)
+                println("Epoch: $epoch \t Loss: $(Float32(loss)) \t ETA: $eta_str")
                 log_cb(Dict(
                     "type" => "progress",
                     "stage" => "Training DeepONet",
@@ -142,14 +161,15 @@ function train_fno!(
                 msg = "Compilation finished in $comp_mins min. Fast training started."
                 println(msg)
                 log_cb(Dict("type" => "status", "stage" => msg))
-                println("Epoch: $epoch \t Loss: $(Float32(loss))")
+                println("Epoch: $epoch \t Loss: $(Float32(current_loss))")
             elseif epoch % 500 == 0
-                println("Epoch: $epoch \t Loss: $current_loss")
-
                 elapsed_fast = time() - t_start_fast
                 time_per_epoch = elapsed_fast / (epoch - 1)
                 epochs_left = epochs - epoch
                 eta_seconds = time_per_epoch * epochs_left
+
+                eta_str = format_eta(eta_seconds)
+                println("Epoch: $epoch \t Loss: $current_loss\t ETA: $eta_str")
 
                 log_cb(Dict(
                     "type" => "progress",
