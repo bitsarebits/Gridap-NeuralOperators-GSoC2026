@@ -1,4 +1,4 @@
-import { BrainCircuit, Activity, Loader2, Server } from "lucide-react";
+import { BrainCircuit, Activity, Loader2, Server, Globe } from "lucide-react";
 
 interface ServerConnectionScreenProps {
     status: "connecting" | "connected" | "disconnected";
@@ -7,7 +7,43 @@ interface ServerConnectionScreenProps {
 export default function ServerConnectionScreen({
     status,
 }: ServerConnectionScreenProps) {
-    if (status === "connected") return null;
+    const isLocalhost =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1";
+
+    // If we are online (GitHub Pages) and the server is not connected,
+    // we show the Read-Only Gallery message
+    if (!isLocalhost && status !== "connected") {
+        return (
+            <div className="flex flex-col items-center justify-center py-20 px-4 text-center max-w-2xl mx-auto animate-in fade-in zoom-in-95 duration-500">
+                <div className="bg-blue-50 p-4 rounded-full text-blue-500 mb-6 border border-blue-100">
+                    <Globe size={48} />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-800 mb-3">
+                    Read-Only Public Gallery
+                </h2>
+                <p className="text-slate-600 mb-8">
+                    You are viewing the GridapROMs dashboard online. The local
+                    Julia backend is not accessible, so you can explore cached
+                    experiments and shared results, but cannot run new
+                    simulations.
+                </p>
+                <div className="bg-white border border-slate-200 rounded-xl p-6 w-full text-left shadow-sm">
+                    <h3 className="font-semibold text-slate-800 mb-2">
+                        Want to run new simulations?
+                    </h3>
+                    <p className="text-sm text-slate-500 mb-4">
+                        Clone the repository and run the local Oxygen.jl server
+                        to unlock the Pipeline Orchestrator and workspace sync
+                        capabilities.
+                    </p>
+                    <code className="block bg-slate-50 border border-slate-100 p-3 rounded text-xs font-mono text-slate-700 select-all">
+                        git clone https://github.com/gridap/GridapROMs.jl.git
+                    </code>
+                </div>
+            </div>
+        );
+    }
 
     const isConnecting = status === "connecting";
 

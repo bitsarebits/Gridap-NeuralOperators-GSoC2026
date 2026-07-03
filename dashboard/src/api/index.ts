@@ -141,6 +141,7 @@ export const fetchSharedRegistry = async (): Promise<RegistryData> => {
             // Reconstruct the nested structure
             sharedRegistry.data[dataHash] = {
                 ...parsedDoc.fem_config,
+                data_url: parsedDoc.data_url,
                 _isShared: true, // Metadata flag for UI
             };
 
@@ -148,6 +149,7 @@ export const fetchSharedRegistry = async (): Promise<RegistryData> => {
                 ...parsedDoc.solver_config,
                 solver_type: parsedDoc.model_type,
                 data_hash: dataHash,
+                model_url: parsedDoc.model_url,
                 _isShared: true,
             };
 

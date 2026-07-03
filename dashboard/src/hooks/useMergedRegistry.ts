@@ -20,8 +20,11 @@ const mergeRegistries = (
 
         // Then, overwrite with local but retain/set the _isShared flag if it was in remote
         Object.keys(local[category]).forEach((hash) => {
-            const isAlsoShared = !!shared[category][hash];
+            const remoteItem = shared[category][hash];
+            const isAlsoShared = !!remoteItem;
+
             merged[category][hash] = {
+                ...(remoteItem || {}),
                 ...local[category][hash],
                 _isShared: isAlsoShared,
                 _isLocal: true, // Metadata to distinguish local presence

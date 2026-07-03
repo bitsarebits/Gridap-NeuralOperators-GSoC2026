@@ -56,11 +56,7 @@ export default function EvaluationNode({
 
     // Sync payload only if we have all the data in Firebase
     const syncPayload =
-        femConfig &&
-        modelConfig &&
-        evalObj.image_url &&
-        femConfig.data_url &&
-        modelConfig.model_url
+        femConfig && modelConfig
             ? {
                   eval_hash: evalHash,
                   model_type: parsedModelType,
@@ -72,9 +68,9 @@ export default function EvaluationNode({
                   fem_config: femConfig,
                   solver_config: parsedSolverConfig,
                   eval_config: parsedEvalConfig,
-                  data_url: femConfig.data_url,
-                  model_url: modelConfig.model_url,
-                  image_url: evalObj.image_url,
+                  data_url: femConfig.data_url || "",
+                  model_url: modelConfig.model_url || "",
+                  image_url: evalObj.image_url || "",
               }
             : null;
 
@@ -120,7 +116,7 @@ export default function EvaluationNode({
                             <Cloud size={10} /> Cloud
                         </span>
                     )}
-                    {isLocal && !isShared && (
+                    {isLocal && (
                         <span className="flex items-center gap-1 text-[9px] uppercase font-bold tracking-wider bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full border border-slate-200">
                             <HardDrive size={10} /> Local
                         </span>

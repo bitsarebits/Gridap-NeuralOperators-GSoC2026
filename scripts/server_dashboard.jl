@@ -615,18 +615,24 @@ end
             JSON3.write(Dict("status" => "error", "message" => "Network error during file download.")))
     end
 
+    # Internal helper to clean up database and frontend metadata
+    function clean_config(d::Dict)
+        forbidden_keys = ["_isShared", "_isLocal", "model_url", "data_url", "image_url", "data_hash", "model_hash", "eval_hash", "solver_type", "model_type"]
+        return Dict{String,Any}(string(k) => v for (k, v) in pairs(d) if !(string(k) in forbidden_keys))
+    end
+
     # Update Local Registry via HashRegistry
     try
         registry = HashRegistry.load_registry()
 
         # Insert if not exists
         if !haskey(registry["data"], data_hash)
-            registry["data"][data_hash] = payload["fem_config"]
+            registry["data"][data_hash] = clean_config(payload["fem_config"])
         end
 
         if !haskey(registry["models"], model_hash)
             # Reconstruct the solver object expected by local cache
-            solver_dict = payload["solver_config"]
+            solver_dict = clean_config(payload["solver_config"])
             registry["models"][model_hash] = Dict(
                 "solver_type" => payload["model_type"],
                 "solver" => solver_dict,
@@ -637,7 +643,7 @@ end
         if !haskey(registry["evaluations"], eval_hash)
             registry["evaluations"][eval_hash] = Dict(
                 "model_hash" => model_hash,
-                "eval_config" => payload["eval_config"]
+                "eval_config" => clean_config(payload["eval_config"])
             )
         end
 

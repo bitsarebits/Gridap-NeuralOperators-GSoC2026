@@ -6,7 +6,7 @@ import {
     Cloud,
     HardDrive,
 } from "lucide-react";
-import ConfigGrid from "../ui/ConfigGrid";
+import ConfigGrid, { FORBIDDEN_KEYS } from "../ui/ConfigGrid";
 import EvaluationNode from "./EvaluationNode";
 import type { RegistryData } from "../../types";
 import DeleteButton from "../ui/DeleteButton";
@@ -42,33 +42,86 @@ export default function ModelNode({
         (modelObj.model_type
             ? `${modelObj.model_type}Solver`
             : "UnknownSolver");
-    const epochs = solver.epochs || solver.n_epochs || "N/A";
 
-    let archInfo = "";
-    if (solverType.includes("FNO")) {
-        const modes = Array.isArray(solver.modes)
-            ? solver.modes.join(", ")
-            : typeof solver.modes === "object"
-              ? Object.values(solver.modes).join(", ")
-              : solver.modes;
-        archInfo = `modes: [${modes || "N/A"}]`;
-    } else {
-        archInfo = `p_latent: ${solver.p_latent || "N/A"}, hidden: ${solver.hidden || "N/A"}`;
-    }
+    const buildCompactModelString = () => {
+        const parts: string[] = [];
 
-    const configToRender = modelObj.solver ? modelObj.solver : modelObj;
+        // Specific group for DeepONet
+        if (solverType.includes("DeepONet")) {
+            if (solver.p_latent !== undefined && solver.hidden !== undefined) {
+                parts.push(`p=${solver.p_latent} • hidden=${solver.hidden}`);
+            }
+            if (solver.m_sensors !== undefined)
+                parts.push(`m=${solver.m_sensors}`);
+        }
+
+        // Specific Group for FNO
+        if (solverType.includes("FNO")) {
+            if (solver.modes !== undefined) {
+                // Both array [16] and object {"1": 16} for retro-compatibility
+                const m = Array.isArray(solver.modes)
+                    ? `[${solver.modes.join(",")}]`
+                    : typeof solver.modes === "object"
+                      ? `[${Object.values(solver.modes).join(",")}]`
+                      : solver.modes;
+                parts.push(`modes=${m}`);
+            }
+            if (solver.hidden_channels !== undefined) {
+                const hc = Array.isArray(solver.hidden_channels)
+                    ? `[${solver.hidden_channels.join(",")}]`
+                    : typeof solver.hidden_channels === "object"
+                      ? `[${Object.values(solver.hidden_channels).join(",")}]`
+                      : solver.hidden_channels;
+                parts.push(`channels=${hc}`);
+            }
+        }
+
+        // Shared parameters (Training & Learning Rate)
+        const epochs = solver.epochs || solver.n_epochs;
+        if (epochs !== undefined) parts.push(`epochs=${epochs}`);
+
+        if (solver.lr_scheduler?.lr_max !== undefined) {
+            parts.push(`lr_max=${solver.lr_scheduler.lr_max}`);
+        }
+
+        // Add remaining parameters
+        const groupedKeys = [
+            "p_latent",
+            "hidden",
+            "m_sensors",
+            "modes",
+            "hidden_channels",
+            "epochs",
+            "n_epochs",
+            "lr_scheduler",
+        ];
+
+        Object.entries(solver).forEach(([k, v]) => {
+            if (!FORBIDDEN_KEYS.includes(k) && !groupedKeys.includes(k)) {
+                if (typeof v !== "object" || v === null) {
+                    parts.push(`${k}=${v}`);
+                }
+            }
+        });
+
+        return parts.join(" | ");
+    };
+
+    const compactConfigString = buildCompactModelString();
 
     return (
-        <div className="bg-white border border-slate-200/70 rounded-xl shadow-xs overflow-hidden">
+        <div className="bg-white border-t border-slate-100 transition-all">
             <div
                 onClick={() => setIsExpanded(!isExpanded)}
-                className={`p-4 flex items-center justify-between cursor-pointer transition-colors select-none ${isExpanded ? "bg-blue-50/40 border-b border-slate-100" : "hover:bg-slate-50/50"}`}
+                className={`p-4 pl-12 flex items-center justify-between cursor-pointer transition-colors select-none ${isExpanded ? "bg-slate-50/50" : "hover:bg-slate-50/30"}`}
             >
-                <div className="flex items-center gap-3 pl-2">
-                    <Brain size={18} className="text-blue-600" />
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="font-semibold text-sm text-slate-800">
+                <div className="flex items-center gap-4">
+                    <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-100 text-indigo-600 shrink-0">
+                        <Brain size={18} />
+                    </div>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-slate-800">
                                 {solverType} Weights
                             </span>
                             {isShared && (
@@ -76,22 +129,23 @@ export default function ModelNode({
                                     <Cloud size={12} /> Cloud
                                 </span>
                             )}
-                            {isLocal && !isShared && (
+                            {isLocal && (
                                 <span className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200">
                                     <HardDrive size={12} /> Local
                                 </span>
                             )}
-                            <span className="font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[11px] font-medium select-all">
+
+                            <span className="font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-semibold select-all">
                                 {modelHash}
                             </span>
                         </div>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                            Epochs: {epochs} | Architecture: {archInfo}
+                        <p className="text-[11px] text-slate-500 mt-1 font-mono leading-relaxed wrap-break-words">
+                            {compactConfigString}
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <span className="text-[11px] font-bold px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full border border-blue-100">
+                <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
                         {linkedEvals.length}{" "}
                         {linkedEvals.length === 1 ? "Plot" : "Plots"}
                     </span>
@@ -107,7 +161,7 @@ export default function ModelNode({
                 <div className="bg-slate-50/20 p-4 flex flex-col gap-3 animate-in slide-in-from-top-1 duration-150">
                     <ConfigGrid
                         title="Architecture & Training Configuration"
-                        configObj={configToRender}
+                        configObj={solver}
                     />
 
                     {isLocal && (

@@ -6,7 +6,7 @@ import {
     Cloud,
     HardDrive,
 } from "lucide-react";
-import ConfigGrid from "../ui/ConfigGrid";
+import ConfigGrid, { FORBIDDEN_KEYS } from "../ui/ConfigGrid";
 import ModelNode from "./ModelNode";
 import type { RegistryData } from "../../types";
 import DeleteButton from "../ui/DeleteButton";
@@ -33,6 +33,60 @@ export default function DatasetNode({
         ([_, m]) => m.data_hash === dataHash,
     );
 
+    const buildCompactString = (config: any) => {
+        const parts: string[] = [];
+
+        // Group Beta domain
+        if (
+            config.beta_start !== undefined &&
+            config.beta_step !== undefined &&
+            config.beta_end !== undefined
+        ) {
+            parts.push(
+                `β=[${config.beta_start}:${config.beta_step}:${config.beta_end}]`,
+            );
+        }
+
+        // Group temporal domain
+        if (
+            config.t0 !== undefined &&
+            config.dt !== undefined &&
+            config.tf !== undefined
+        ) {
+            parts.push(`t=[${config.t0}:${config.dt}:${config.tf}]`);
+        }
+
+        // Group spatial domain
+        if (config.L !== undefined && config.nx !== undefined) {
+            parts.push(`x=[${-config.L}:${config.L}] (nx=${config.nx})`);
+        }
+
+        // Add remaining parameters
+        const groupedKeys = [
+            "beta_start",
+            "beta_step",
+            "beta_end",
+            "t0",
+            "dt",
+            "tf",
+            "L",
+            "nx",
+        ];
+
+        Object.entries(config).forEach(([k, v]) => {
+            if (!FORBIDDEN_KEYS.includes(k) && !groupedKeys.includes(k)) {
+                const val = Array.isArray(v)
+                    ? `[${v.join(", ")}]`
+                    : typeof v === "object"
+                      ? "{...}"
+                      : String(v);
+                parts.push(`${k}=${val}`);
+            }
+        });
+
+        return parts.join(" • ");
+    };
+
     return (
         <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden transition-all">
             <div
@@ -40,11 +94,11 @@ export default function DatasetNode({
                 className={`p-5 flex items-center justify-between cursor-pointer transition-colors select-none ${isExpanded ? "bg-slate-50/70 border-b border-slate-100" : "hover:bg-slate-50/40"}`}
             >
                 <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 text-emerald-600">
+                    <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 text-emerald-600 shrink-0">
                         <Database size={20} />
                     </div>
-                    <div>
-                        <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-slate-800">
                                 FEM Snapshots Dataset
                             </span>
@@ -53,7 +107,7 @@ export default function DatasetNode({
                                     <Cloud size={12} /> Cloud
                                 </span>
                             )}
-                            {isLocal && !isShared && (
+                            {isLocal && (
                                 <span className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200">
                                     <HardDrive size={12} /> Local
                                 </span>
@@ -62,14 +116,12 @@ export default function DatasetNode({
                                 {dataHash}
                             </span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                            Beta space: [{femConfig.beta_start} :{" "}
-                            {femConfig.beta_step} : {femConfig.beta_end}] | Mesh
-                            (nx): {femConfig.nx}
+                        <p className="text-[11px] text-slate-500 mt-1 font-mono leading-relaxed wrap-break-words">
+                            {buildCompactString(femConfig)}
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 shrink-0">
                     <span className="text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
                         {linkedModels.length}{" "}
                         {linkedModels.length === 1 ? "Model" : "Models"}
