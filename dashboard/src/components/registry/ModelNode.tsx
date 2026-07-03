@@ -9,6 +9,7 @@ import {
 import ConfigGrid from "../ui/ConfigGrid";
 import EvaluationNode from "./EvaluationNode";
 import type { RegistryData } from "../../types";
+import DeleteButton from "../ui/DeleteButton";
 
 interface Props {
     modelHash: string;
@@ -108,6 +109,17 @@ export default function ModelNode({
                         title="Architecture & Training Configuration"
                         configObj={configToRender}
                     />
+
+                    {isLocal && (
+                        <div className="flex justify-end my-1">
+                            <DeleteButton
+                                targetHash={modelHash}
+                                targetType="model"
+                                mode="local"
+                                buttonLabel="Delete Local Model & All Linked Plots"
+                            />
+                        </div>
+                    )}
 
                     {linkedEvals.length === 0 ? (
                         <p className="text-[11px] font-medium text-slate-400 italic pl-8 py-1">

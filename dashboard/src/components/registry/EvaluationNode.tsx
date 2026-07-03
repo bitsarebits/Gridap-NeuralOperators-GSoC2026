@@ -13,6 +13,7 @@ import ShareButton from "../ui/ShareButton";
 import DownloadButton from "../ui/DownloadButton";
 import SyncWorkspaceButton from "../ui/SyncWorkspaceButton";
 import type { RegistryData } from "../../types";
+import DeleteButton from "../ui/DeleteButton";
 
 interface Props {
     evalHash: string;
@@ -161,6 +162,26 @@ export default function EvaluationNode({
                             </div>
                             {/* action buttons */}
                             <div className="w-full max-w-3xl flex justify-end items-center gap-2 mt-3">
+                                {isShared && serverIsConnected && (
+                                    <DeleteButton
+                                        targetHash={evalHash}
+                                        targetType="evaluation"
+                                        mode="cloud"
+                                        buttonLabel="Remove from Cloud"
+                                        parentModelHash={modelHash}
+                                        parentDataHash={dataHash}
+                                    />
+                                )}
+
+                                {/* Delete Local */}
+                                {isLocal && (
+                                    <DeleteButton
+                                        targetHash={evalHash}
+                                        targetType="evaluation"
+                                        mode="local"
+                                        buttonLabel="Delete Local File"
+                                    />
+                                )}
                                 {!isShared && (
                                     <ShareButton evalHash={evalHash} />
                                 )}

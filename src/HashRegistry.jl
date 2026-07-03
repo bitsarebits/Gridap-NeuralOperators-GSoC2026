@@ -4,7 +4,7 @@ using SHA
 using JSON
 using DrWatson
 
-export config_hash, update_registry!, check_registry
+export config_hash, update_registry!, check_registry, load_registry, save_registry
 
 const REGISTRY_PATH = datadir("registry.json")
 
@@ -24,6 +24,15 @@ function _save_registry(registry::AbstractDict)
     open(REGISTRY_PATH, "w") do f
         JSON.print(f, registry, 4)
     end
+end
+
+
+"""
+    save_registry(registry::AbstractDict)
+Saves the modified registry dictionary back to disk.
+"""
+function save_registry(registry::AbstractDict)
+    _save_registry(registry)
 end
 
 """

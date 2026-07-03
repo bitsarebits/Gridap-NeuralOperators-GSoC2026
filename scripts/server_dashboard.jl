@@ -634,6 +634,133 @@ end
     ))
 end
 
+# Delete endpoint (Local & Cloud)
+@post "/api/delete_local" function (req::HTTP.Request)
+    payload = JSON3.read(req.body, Dict{String,Any})
+    target_hash = payload["hash"]
+    target_type = payload["type"] # "evaluation", "model", or "data"
+
+    registry = HashRegistry.load_registry()
+
+    evals_to_delete = String[]
+    models_to_delete = String[]
+    data_to_delete = String[]
+
+    # Cascading Logic Selection
+    if target_type == "evaluation"
+        push!(evals_to_delete, target_hash)
+    elseif target_type == "model"
+        push!(models_to_delete, target_hash)
+        for (e_h, e_obj) in registry["evaluations"]
+            if e_obj["model_hash"] == target_hash
+                push!(evals_to_delete, e_h)
+            end
+        end
+    elseif target_type == "data"
+        push!(data_to_delete, target_hash)
+        for (m_h, m_obj) in registry["models"]
+            if m_obj["data_hash"] == target_hash
+                push!(models_to_delete, m_h)
+                for (e_h, e_obj) in registry["evaluations"]
+                    if e_obj["model_hash"] == m_h
+                        push!(evals_to_delete, e_h)
+                    end
+                end
+            end
+        end
+    else
+        return HTTP.Response(400, "Invalid target_type.")
+    end
+
+    @info "Executing cascading delete for $target_type [$target_hash]..."
+
+    # Delete Evaluations (Plots)
+    for e_h in evals_to_delete
+        m_h = registry["evaluations"][e_h]["model_hash"]
+        solver_type = lowercase(get(registry["models"][m_h], "solver_type", get(registry["models"][m_h], "model_type", "unknown")))
+        plot_path = plotsdir(solver_type, "eval_$(e_h).png")
+        isfile(plot_path) && rm(plot_path)
+        delete!(registry["evaluations"], e_h)
+    end
+
+    # Delete Models (Weights)
+    for m_h in models_to_delete
+        solver_type = lowercase(get(registry["models"][m_h], "solver_type", get(registry["models"][m_h], "model_type", "unknown")))
+        model_path = datadir("models", solver_type, "model_$(m_h).jld2")
+        isfile(model_path) && rm(model_path)
+        delete!(registry["models"], m_h)
+    end
+
+    # Delete Data (FEM Snapshots)
+    for d_h in data_to_delete
+        data_path = datadir("sims", "data_$(d_h).jld2")
+        isfile(data_path) && rm(data_path)
+        delete!(registry["data"], d_h)
+    end
+
+    # Save registry
+    HashRegistry.save_registry(registry)
+    @info "Deletion completed successfully."
+
+    return JSON3.write(Dict("status" => "success", "message" => "Item(s) successfully deleted from local workspace."))
+end
+
+
+@post "/api/delete_shared" function (req::HTTP.Request)
+    if !HAS_FIREBASE_ACCESS
+        return HTTP.Response(403, JSON3.write(Dict("status" => "error", "message" => "Firebase publishing is disabled.")))
+    end
+
+    payload = JSON3.read(req.body, Dict{String,Any})
+    eval_hash = get(payload, "eval_hash", nothing)
+    model_hash = get(payload, "model_hash", nothing)
+    data_hash = get(payload, "data_hash", nothing)
+
+    if isnothing(eval_hash)
+        return HTTP.Response(400, JSON3.write(Dict("status" => "error", "message" => "Missing eval_hash.")))
+    end
+
+    @info "Deleting experiment $eval_hash from Cloud Gallery..."
+    token = FirebaseREST.get_access_token()
+
+    if isnothing(token)
+        return HTTP.Response(500, JSON3.write(Dict("status" => "error", "message" => "Failed to authenticate securely with Firebase.")))
+    end
+
+    # Delete the specific Firestore document and its Plot Image
+    doc_deleted = FirebaseREST.delete_from_firestore(token, "shared_experiments", eval_hash)
+    FirebaseREST.delete_from_storage(token, "plots/$(eval_hash).png")
+
+    if doc_deleted
+        #  Garbage Collection (Reference Checking)
+        # Fetch all remaining documents in the gallery
+        cred = Auth.get_firebase_credentials()
+        url = "https://firestore.googleapis.com/v1/projects/$(cred["project_id"])/databases/(default)/documents/shared_experiments"
+        resp = HTTP.get(url, ["Authorization" => "Bearer $token"]; status_exception=false)
+
+        if resp.status == 200
+            remaining_data = String(resp.body)
+
+            # Check if model_hash is still referenced anywhere in the remaining JSON
+            if !isnothing(model_hash) && !occursin(model_hash, remaining_data)
+                @info "Model $model_hash is no longer referenced by any public evaluation. Removing from Cloud Storage..."
+                FirebaseREST.delete_from_storage(token, "models/$(model_hash).jld2")
+            end
+
+            # Check if data_hash is still referenced anywhere in the remaining JSON
+            if !isnothing(data_hash) && !occursin(data_hash, remaining_data)
+                @info "Data $data_hash is no longer referenced by any public model. Removing from Cloud Storage..."
+                FirebaseREST.delete_from_storage(token, "data/$(data_hash).jld2")
+            end
+        end
+
+        @info "Successfully and cleanly removed $eval_hash from public gallery."
+        return JSON3.write(Dict("status" => "success", "message" => "Experiment and unreferenced files deleted cleanly."))
+    else
+        return HTTP.Response(500, JSON3.write(Dict("status" => "error", "message" => "Failed to delete document from Firestore.")))
+    end
+end
+
 # Define the path to the React static build
 const BUILD_DIR = joinpath(@__DIR__, "..", "dashboard", "dist")
 

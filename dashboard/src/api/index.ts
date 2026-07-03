@@ -172,3 +172,24 @@ export const syncExperimentLocally = async (
     const response = await api.post("/api/sync_experiment", payload);
     return response.data;
 };
+
+export const deleteLocalItem = async (
+    type: "data" | "model" | "evaluation",
+    hash: string,
+): Promise<{ status: string; message: string }> => {
+    const response = await api.post("/api/delete_local", { type, hash });
+    return response.data;
+};
+
+export const deleteSharedExperiment = async (
+    evalHash: string,
+    modelHash: string,
+    dataHash: string,
+): Promise<{ status: string; message: string }> => {
+    const response = await api.post("/api/delete_shared", {
+        eval_hash: evalHash,
+        model_hash: modelHash,
+        data_hash: dataHash,
+    });
+    return response.data;
+};

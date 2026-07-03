@@ -205,6 +205,13 @@ export const useSimulationSocket = (
         }
     };
 
+    const clearResult = useCallback(() => {
+        setResult(null);
+        setError(null);
+        setProgress(null);
+        setStatusMessage("");
+    }, []);
+
     return {
         isLoading,
         error,
@@ -213,5 +220,6 @@ export const useSimulationSocket = (
         progress,
         startSimulation,
         abortSimulation,
+        clearResult,
     };
 };

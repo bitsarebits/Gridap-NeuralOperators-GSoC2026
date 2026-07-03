@@ -122,6 +122,7 @@ export default function OrchestratorView({ serverStatus }: Props) {
         progress,
         startSimulation,
         abortSimulation,
+        clearResult,
     } = useSimulationSocket(serverStatus);
 
     const onSubmit = async (data: SimulationFormValues) => {
@@ -316,10 +317,7 @@ export default function OrchestratorView({ serverStatus }: Props) {
 
             {/* Results */}
             {result && result.eval_hash && result.image_url && !isLoading && (
-                <Results
-                    plotHash={result.eval_hash}
-                    imageUrl={result.image_url}
-                />
+                <Results result={result} onReset={clearResult} />
             )}
         </div>
     );

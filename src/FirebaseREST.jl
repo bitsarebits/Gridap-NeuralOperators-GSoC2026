@@ -223,6 +223,50 @@ function push_to_firestore(access_token::String, collection::String, document_id
     end
 end
 
+"""
+    delete_from_firestore(access_token::String, collection::String, document_id::String)
+"""
+function delete_from_firestore(access_token::String, collection::String, document_id::String)
+    cred = Auth.get_firebase_credentials()
+    if isnothing(cred)
+        return false
+    end
+
+    url = "https://firestore.googleapis.com/v1/projects/$(cred["project_id"])/databases/(default)/documents/$(collection)/$(document_id)"
+    headers = ["Authorization" => "Bearer $access_token"]
+
+    try
+        response = HTTP.delete(url, headers; status_exception=false)
+        return response.status >= 200 && response.status < 300
+    catch e
+        @error "Firestore Delete Error" exception=(e, catch_backtrace())
+        return false
+    end
+end
+
+"""
+    delete_from_storage(access_token::String, destination_name::String)
+"""
+function delete_from_storage(access_token::String, destination_name::String)
+    cred = Auth.get_firebase_credentials()
+    if isnothing(cred)
+        return false
+    end
+
+    bucket_name = "$(cred["project_id"]).firebasestorage.app"
+    safe_dest = HTTP.URIs.escapeuri(destination_name)
+    url = "https://storage.googleapis.com/storage/v1/b/$(bucket_name)/o/$(safe_dest)"
+    headers = ["Authorization" => "Bearer $access_token"]
+
+    try
+        response = HTTP.delete(url, headers; status_exception=false)
+        return response.status >= 200 && response.status < 300
+    catch e
+        @error "Storage Delete Error" exception=(e, catch_backtrace())
+        return false
+    end
+end
+
 # ---------------- INTERNAL HELPERS ----------------
 
 function _julia_to_firestore_value(v)

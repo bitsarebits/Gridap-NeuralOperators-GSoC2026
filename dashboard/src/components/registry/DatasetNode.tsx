@@ -9,6 +9,7 @@ import {
 import ConfigGrid from "../ui/ConfigGrid";
 import ModelNode from "./ModelNode";
 import type { RegistryData } from "../../types";
+import DeleteButton from "../ui/DeleteButton";
 
 interface Props {
     dataHash: string;
@@ -87,6 +88,17 @@ export default function DatasetNode({
                         title="Physical & Numerical Setup"
                         configObj={femConfig}
                     />
+
+                    {isLocal && (
+                        <div className="flex justify-end my-1">
+                            <DeleteButton
+                                targetHash={dataHash}
+                                targetType="data"
+                                mode="local"
+                                buttonLabel="Delete Local Dataset & All Linked Models"
+                            />
+                        </div>
+                    )}
 
                     {linkedModels.length === 0 ? (
                         <p className="text-xs font-medium text-slate-400 italic pl-12 py-2">
