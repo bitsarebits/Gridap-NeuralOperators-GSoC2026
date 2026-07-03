@@ -157,8 +157,10 @@ end
                 # Safely extract session_id, falling back to a new UUID if missing or explicitly null
                 if haskey(payload, "session_id") && payload["session_id"] !== nothing
                     session_id = String(payload["session_id"])
+                    @info "Reconnected WebSocket for session: $session_id"
                 else
                     session_id = string(uuid4())
+                    @info "New simulation started. Session ID: $session_id"
                 end
 
                 # Send the session ID back to the client immediately
@@ -366,6 +368,7 @@ end
         eval_hash = String(payload["eval_hash"])
         solver_type = lowercase(String(payload["solver_type"]))
 
+        @info "Serving evaluation plot for $solver_type (Hash: $eval_hash)"
         image_path = plotsdir(solver_type, "eval_$(eval_hash).png")
 
         if isfile(image_path)
@@ -412,6 +415,7 @@ end
     end
 
     eval_hash = get(payload, "eval_hash", nothing)
+    @info "User triggered Firebase sharing for experiment: $eval_hash"
 
     if isnothing(eval_hash) || isempty(eval_hash)
         return HTTP.Response(
@@ -579,14 +583,32 @@ end
 
     # Download files synchronously
     try
-        @info "Downloading FEM data..."
-        HTTP.download(payload["data_url"], data_dest)
+        try
+            if !isfile(data_dest)
+                @info "Downloading FEM data [$(data_hash)]..."
+                HTTP.download(payload["data_url"], data_dest)
+            else
+                @info "FEM data [$(data_hash)] already exists locally. Skipping download."
+            end
 
-        @info "Downloading Model weights..."
-        HTTP.download(payload["model_url"], model_dest)
+            if !isfile(model_dest)
+                @info "Downloading Model weights [$(model_hash)]..."
+                HTTP.download(payload["model_url"], model_dest)
+            else
+                @info "Model weights [$(model_hash)] already exist locally. Skipping download."
+            end
 
-        @info "Downloading Evaluation plot..."
-        HTTP.download(payload["image_url"], plot_dest)
+            if !isfile(plot_dest)
+                @info "Downloading Evaluation plot [$(eval_hash)]..."
+                HTTP.download(payload["image_url"], plot_dest)
+            else
+                @info "Evaluation plot [$(eval_hash)] already exists locally. Skipping download."
+            end
+        catch e
+            @error "Failed to download files from Firebase Storage" exception=(e, catch_backtrace())
+            return HTTP.Response(500, ["Content-Type" => "application/json"],
+                JSON3.write(Dict("status" => "error", "message" => "Network error during file download.")))
+        end
     catch e
         @error "Failed to download files from Firebase Storage" exception=(e, catch_backtrace())
         return HTTP.Response(500, ["Content-Type" => "application/json"],
@@ -788,4 +810,9 @@ println("🔌 WebSocket Engine on: ws://127.0.0.1:8080/ws/simulate")
 println("===================================================================\n")
 
 # Attach the CORS middleware and start serving
-serve(host="127.0.0.1", port=8080, middleware=[cors_middleware])
+serve(
+    host="127.0.0.1",
+    port=8080,
+    middleware=[cors_middleware],
+    access_log=nothing
+)
