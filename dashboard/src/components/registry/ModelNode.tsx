@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Brain, ChevronDown, ChevronRight } from "lucide-react";
+import {
+    Brain,
+    ChevronDown,
+    ChevronRight,
+    Cloud,
+    HardDrive,
+} from "lucide-react";
 import ConfigGrid from "../ui/ConfigGrid";
 import EvaluationNode from "./EvaluationNode";
 import type { RegistryData } from "../../types";
@@ -12,6 +18,10 @@ interface Props {
 
 export default function ModelNode({ modelHash, modelObj, registry }: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
+
+    // Metadata flags
+    const isShared = modelObj._isShared;
+    const isLocal = modelObj._isLocal;
 
     // Filter evaluations linking to this model
     const linkedEvals = Object.entries(registry.evaluations).filter(
@@ -54,6 +64,16 @@ export default function ModelNode({ modelHash, modelObj, registry }: Props) {
                             <span className="font-semibold text-sm text-slate-800">
                                 {solverType} Weights
                             </span>
+                            {isShared && (
+                                <span className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100">
+                                    <Cloud size={12} /> Cloud
+                                </span>
+                            )}
+                            {isLocal && !isShared && (
+                                <span className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200">
+                                    <HardDrive size={12} /> Local
+                                </span>
+                            )}
                             <span className="font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[11px] font-medium select-all">
                                 {modelHash}
                             </span>

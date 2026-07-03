@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Database, ChevronDown, ChevronRight } from "lucide-react";
+import {
+    Database,
+    ChevronDown,
+    ChevronRight,
+    Cloud,
+    HardDrive,
+} from "lucide-react";
 import ConfigGrid from "../ui/ConfigGrid";
 import ModelNode from "./ModelNode";
 import type { RegistryData } from "../../types";
@@ -12,6 +18,9 @@ interface Props {
 
 export default function DatasetNode({ dataHash, femConfig, registry }: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
+
+    const isShared = femConfig._isShared;
+    const isLocal = femConfig._isLocal;
 
     const linkedModels = Object.entries(registry.models).filter(
         ([_, m]) => m.data_hash === dataHash,
@@ -32,6 +41,16 @@ export default function DatasetNode({ dataHash, femConfig, registry }: Props) {
                             <span className="font-bold text-slate-800">
                                 FEM Snapshots Dataset
                             </span>
+                            {isShared && (
+                                <span className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100">
+                                    <Cloud size={12} /> Cloud
+                                </span>
+                            )}
+                            {isLocal && !isShared && (
+                                <span className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200">
+                                    <HardDrive size={12} /> Local
+                                </span>
+                            )}
                             <span className="font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-semibold select-all">
                                 {dataHash}
                             </span>

@@ -5,6 +5,8 @@ import {
     ChevronRight,
     Loader2,
     AlertCircle,
+    Cloud,
+    HardDrive,
 } from "lucide-react";
 import { fetchEvaluationPlot } from "../../api";
 import ShareButton from "../ui/ShareButton";
@@ -21,16 +23,23 @@ export default function EvaluationNode({
     evalObj,
     solverType,
 }: Props) {
+    // State
     const [isExpanded, setIsExpanded] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    const [plotImage, setPlotImage] = useState<string | null>(null);
+    const [plotImage, setPlotImage] = useState<string | null>(
+        evalObj.image_url || null,
+    ); // Initialized if it came from firebase
     const [error, setError] = useState<string | null>(null);
+
+    // Metadata flags for UI
+    const isShared = evalObj._isShared;
+    const isLocal = evalObj._isLocal;
 
     const toggleExpansion = async () => {
         const willExpand = !isExpanded;
         setIsExpanded(willExpand);
 
-        if (willExpand && !plotImage) {
+        if (willExpand && !plotImage && isLocal) {
             setIsLoading(true);
             setError(null);
             try {
@@ -38,11 +47,11 @@ export default function EvaluationNode({
                 if (res.status === "success" && res.image_url) {
                     setPlotImage(res.image_url);
                 } else {
-                    setError(res.message || "Image not found.");
+                    setError(res.message || "Image not found on local disk.");
                 }
             } catch (err) {
-                console.error("Failed to load archived plot:", err);
-                setError("Failed to fetch plot from server.");
+                console.error("Failed to load local plot:", err);
+                setError("Failed to fetch plot from local server.");
             } finally {
                 setIsLoading(false);
             }
@@ -63,6 +72,16 @@ export default function EvaluationNode({
                     <span className="font-semibold text-slate-700">
                         Zero-Shot Report (σ_test: {sigmaTest})
                     </span>
+                    {isShared && (
+                        <span className="flex items-center gap-1 text-[9px] uppercase font-bold tracking-wider bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full border border-blue-100">
+                            <Cloud size={10} /> Cloud
+                        </span>
+                    )}
+                    {isLocal && !isShared && (
+                        <span className="flex items-center gap-1 text-[9px] uppercase font-bold tracking-wider bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full border border-slate-200">
+                            <HardDrive size={10} /> Local
+                        </span>
+                    )}
                     <span className="font-mono text-[10px] text-slate-400 bg-slate-50 px-1 py-0.5 rounded select-all">
                         {evalHash}
                     </span>
@@ -100,7 +119,9 @@ export default function EvaluationNode({
                             </div>
                             {/* action buttons */}
                             <div className="w-full max-w-3xl flex justify-end items-center gap-2 mt-3">
-                                <ShareButton evalHash={evalHash} />
+                                {!isShared && (
+                                    <ShareButton evalHash={evalHash} />
+                                )}
 
                                 <DownloadButton
                                     imageUrl={plotImage}

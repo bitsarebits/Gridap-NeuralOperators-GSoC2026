@@ -7,6 +7,7 @@ import {
     AlertCircle,
 } from "lucide-react";
 import { checkShareStatus, shareExperiment } from "../../api";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface ShareButtonProps {
     evalHash: string;
@@ -18,6 +19,8 @@ export default function ShareButton({ evalHash }: ShareButtonProps) {
     const [publicUrl, setPublicUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [alreadyExists, setAlreadyExists] = useState<boolean>(false);
+
+    const queryClient = useQueryClient();
 
     // Capability check on mount
     useEffect(() => {
@@ -45,6 +48,11 @@ export default function ShareButton({ evalHash }: ShareButtonProps) {
             if (res.status === "success" && res.public_url) {
                 setPublicUrl(res.public_url);
                 setAlreadyExists(!!res.already_exists);
+
+                // Invalidate tanstack cache
+                queryClient.invalidateQueries({
+                    queryKey: ["registry", "merged"],
+                });
             }
         } catch (err: any) {
             setError(
