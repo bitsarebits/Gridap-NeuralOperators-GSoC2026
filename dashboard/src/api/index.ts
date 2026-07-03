@@ -7,6 +7,7 @@ import type {
     SharePayload,
     ShareResponse,
     SimulationPayload,
+    SyncPayload,
 } from "../types";
 
 const FIREBASE_PROJECT_ID = "gridap-gsoc2026";
@@ -163,4 +164,11 @@ export const fetchSharedRegistry = async (): Promise<RegistryData> => {
         console.error("Failed to fetch shared registry from Firestore", error);
         return { data: {}, models: {}, evaluations: {} };
     }
+};
+
+export const syncExperimentLocally = async (
+    payload: SyncPayload,
+): Promise<{ status: string; message?: string }> => {
+    const response = await api.post("/api/sync_experiment", payload);
+    return response.data;
 };

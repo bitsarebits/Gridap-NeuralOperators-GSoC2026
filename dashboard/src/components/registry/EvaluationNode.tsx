@@ -11,17 +11,23 @@ import {
 import { fetchEvaluationPlot } from "../../api";
 import ShareButton from "../ui/ShareButton";
 import DownloadButton from "../ui/DownloadButton";
+import SyncWorkspaceButton from "../ui/SyncWorkspaceButton";
+import type { RegistryData } from "../../types";
 
 interface Props {
     evalHash: string;
     evalObj: any;
     solverType: string;
+    serverIsConnected: boolean;
+    registry: RegistryData;
 }
 
 export default function EvaluationNode({
     evalHash,
     evalObj,
     solverType,
+    serverIsConnected,
+    registry,
 }: Props) {
     // State
     const [isExpanded, setIsExpanded] = useState(false);
@@ -32,8 +38,44 @@ export default function EvaluationNode({
     const [error, setError] = useState<string | null>(null);
 
     // Metadata flags for UI
-    const isShared = evalObj._isShared;
-    const isLocal = evalObj._isLocal;
+    const isShared = !!evalObj._isShared;
+    const isLocal = !!evalObj._isLocal;
+
+    // Dependency tree for the Sync Payload
+    const modelHash = evalObj.model_hash;
+    const modelConfig = registry.models[modelHash];
+    const dataHash = modelConfig?.data_hash;
+    const femConfig = dataHash ? registry.data[dataHash] : null;
+
+    // Backward Compatibility Parsers for legacy registry schemas
+    const parsedSolverConfig = modelConfig?.solver || modelConfig;
+    const parsedEvalConfig = evalObj?.eval_config || evalObj;
+    const parsedModelType =
+        modelConfig?.solver_type || modelConfig?.model_type || solverType;
+
+    // Sync payload only if we have all the data in Firebase
+    const syncPayload =
+        femConfig &&
+        modelConfig &&
+        evalObj.image_url &&
+        femConfig.data_url &&
+        modelConfig.model_url
+            ? {
+                  eval_hash: evalHash,
+                  model_type: parsedModelType,
+                  hashes: {
+                      data_hash: dataHash,
+                      model_hash: modelHash,
+                      eval_hash: evalHash,
+                  },
+                  fem_config: femConfig,
+                  solver_config: parsedSolverConfig,
+                  eval_config: parsedEvalConfig,
+                  data_url: femConfig.data_url,
+                  model_url: modelConfig.model_url,
+                  image_url: evalObj.image_url,
+              }
+            : null;
 
     const toggleExpansion = async () => {
         const willExpand = !isExpanded;
@@ -122,6 +164,16 @@ export default function EvaluationNode({
                                 {!isShared && (
                                     <ShareButton evalHash={evalHash} />
                                 )}
+
+                                {isShared &&
+                                    !isLocal &&
+                                    serverIsConnected &&
+                                    syncPayload && (
+                                        <SyncWorkspaceButton
+                                            isLocal={isLocal}
+                                            syncPayload={syncPayload}
+                                        />
+                                    )}
 
                                 <DownloadButton
                                     imageUrl={plotImage}

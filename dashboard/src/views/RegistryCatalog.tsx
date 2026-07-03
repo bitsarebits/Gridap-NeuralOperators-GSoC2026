@@ -2,7 +2,13 @@ import { Loader2, AlertCircle, Hash, RefreshCw, Database } from "lucide-react";
 import DatasetNode from "../components/registry/DatasetNode";
 import { useMergedRegistry } from "../hooks/useMergedRegistry";
 
-export default function RegistryCatalog() {
+interface RegistryCatalogProps {
+    serverIsConnected: boolean;
+}
+
+export default function RegistryCatalog({
+    serverIsConnected,
+}: RegistryCatalogProps) {
     const {
         data: registry,
         isLoading,
@@ -80,6 +86,7 @@ export default function RegistryCatalog() {
                         dataHash={dataHash}
                         femConfig={registry.data[dataHash]}
                         registry={registry}
+                        serverIsConnected={serverIsConnected}
                     />
                 ))}
         </div>

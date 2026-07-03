@@ -14,9 +14,15 @@ interface Props {
     modelHash: string;
     modelObj: any;
     registry: RegistryData;
+    serverIsConnected: boolean;
 }
 
-export default function ModelNode({ modelHash, modelObj, registry }: Props) {
+export default function ModelNode({
+    modelHash,
+    modelObj,
+    registry,
+    serverIsConnected,
+}: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
 
     // Metadata flags
@@ -115,6 +121,8 @@ export default function ModelNode({ modelHash, modelObj, registry }: Props) {
                                 evalHash={evalHash}
                                 evalObj={evalObj}
                                 solverType={solverType}
+                                serverIsConnected={serverIsConnected}
+                                registry={registry}
                             />
                         ))
                     )}

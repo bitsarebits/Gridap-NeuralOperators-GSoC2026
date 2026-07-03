@@ -14,9 +14,15 @@ interface Props {
     dataHash: string;
     femConfig: any;
     registry: RegistryData;
+    serverIsConnected: boolean;
 }
 
-export default function DatasetNode({ dataHash, femConfig, registry }: Props) {
+export default function DatasetNode({
+    dataHash,
+    femConfig,
+    registry,
+    serverIsConnected,
+}: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
 
     const isShared = femConfig._isShared;
@@ -94,6 +100,7 @@ export default function DatasetNode({ dataHash, femConfig, registry }: Props) {
                                 modelHash={modelHash}
                                 modelObj={modelObj}
                                 registry={registry}
+                                serverIsConnected={serverIsConnected}
                             />
                         ))
                     )}

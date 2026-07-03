@@ -542,6 +542,98 @@ end
     end
 end
 
+# Sync simulation endpoint: Downloads remote experiments to local DrWatson workspace
+@post "/api/sync_experiment" function (req::HTTP.Request)
+    # Parse Payload
+    local payload::Dict{String,Any}
+    try
+        payload = JSON3.read(req.body, Dict{String,Any})
+    catch e
+        return HTTP.Response(400, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Invalid JSON payload.")))
+    end
+
+    eval_hash = get(payload, "eval_hash", nothing)
+    if isnothing(eval_hash)
+        return HTTP.Response(400, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Missing eval_hash.")))
+    end
+
+    @info "Starting sync for experiment $eval_hash into local workspace..."
+
+    # Extract hashes and URLs
+    hashes = payload["hashes"]
+    data_hash = hashes["data_hash"]
+    model_hash = hashes["model_hash"]
+
+    # Define DrWatson destination paths
+    solver_type = lowercase(payload["model_type"])
+
+    data_dest = datadir("sims", "data_$(data_hash).jld2")
+    model_dest = datadir("models", solver_type, "model_$(model_hash).jld2")
+    plot_dest = plotsdir(solver_type, "eval_$(eval_hash).png")
+
+    # Ensure directories exist
+    mkpath(dirname(model_dest))
+    mkpath(dirname(plot_dest))
+
+    # Download files synchronously
+    try
+        @info "Downloading FEM data..."
+        HTTP.download(payload["data_url"], data_dest)
+
+        @info "Downloading Model weights..."
+        HTTP.download(payload["model_url"], model_dest)
+
+        @info "Downloading Evaluation plot..."
+        HTTP.download(payload["image_url"], plot_dest)
+    catch e
+        @error "Failed to download files from Firebase Storage" exception=(e, catch_backtrace())
+        return HTTP.Response(500, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Network error during file download.")))
+    end
+
+    # Update Local Registry via HashRegistry
+    try
+        registry = HashRegistry.load_registry()
+
+        # Insert if not exists
+        if !haskey(registry["data"], data_hash)
+            registry["data"][data_hash] = payload["fem_config"]
+        end
+
+        if !haskey(registry["models"], model_hash)
+            # Reconstruct the solver object expected by local cache
+            solver_dict = payload["solver_config"]
+            registry["models"][model_hash] = Dict(
+                "solver_type" => payload["model_type"],
+                "solver" => solver_dict,
+                "data_hash" => data_hash
+            )
+        end
+
+        if !haskey(registry["evaluations"], eval_hash)
+            registry["evaluations"][eval_hash] = Dict(
+                "model_hash" => model_hash,
+                "eval_config" => payload["eval_config"]
+            )
+        end
+
+        HashRegistry.save_registry(registry)
+        @info "Registry updated successfully for $eval_hash."
+
+    catch e
+        @error "Failed to update local registry.json" exception=(e, catch_backtrace())
+        return HTTP.Response(500, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Failed to update local cache registry.")))
+    end
+
+    return JSON3.write(Dict(
+        "status" => "success",
+        "message" => "Experiment synced to local workspace."
+    ))
+end
+
 # Define the path to the React static build
 const BUILD_DIR = joinpath(@__DIR__, "..", "dashboard", "dist")
 

@@ -18,11 +18,6 @@ function App() {
     // Check for the Julia backend
     const serverStatus = useServerPing();
 
-    // Global Guard: If the backend is compiling or unreachable, lock the entire UI
-    if (serverStatus !== "connected") {
-        return <ServerConnectionScreen status={serverStatus} />;
-    }
-
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col items-center">
             {/* Global Navigation Header */}
@@ -73,9 +68,15 @@ function App() {
             {/* Dynamic View Router Outlet */}
             <main className="w-full max-w-7xl px-4 py-8 flex justify-center">
                 {currentView === "orchestrator" ? (
-                    <OrchestratorView serverStatus={serverStatus} />
+                    serverStatus === "connected" ? (
+                        <OrchestratorView serverStatus={serverStatus} />
+                    ) : (
+                        <ServerConnectionScreen status={serverStatus} />
+                    )
                 ) : (
-                    <RegistryCatalog />
+                    <RegistryCatalog
+                        serverIsConnected={serverStatus === "connected"}
+                    />
                 )}
             </main>
         </div>
