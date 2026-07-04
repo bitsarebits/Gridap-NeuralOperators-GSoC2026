@@ -33,13 +33,17 @@ export default function ServerConnectionScreen({
                         Want to run new simulations?
                     </h3>
                     <p className="text-sm text-slate-500 mb-4">
-                        Clone the repository and run the local Oxygen.jl server
-                        to unlock the Pipeline Orchestrator and workspace sync
-                        capabilities.
+                        Clone the GSoC experiments repository and run the local
+                        server to unlock the Pipeline Orchestrator and
+                        interactive training.
                     </p>
-                    <code className="block bg-slate-50 border border-slate-100 p-3 rounded text-xs font-mono text-slate-700 select-all">
-                        git clone https://github.com/gridap/GridapROMs.jl.git
-                    </code>
+                    <div className="bg-slate-50 border border-slate-100 p-3 rounded text-xs font-mono text-slate-700 whitespace-pre overflow-x-auto select-all">
+                        git clone
+                        https://github.com/bitsarebits/Gridap-NeuralOperators-GSoC2026.git
+                        {"\n"}
+                        cd Gridap-NeuralOperators-GSoC2026{"\n"}
+                        julia scripts/server_dashboard.jl
+                    </div>
                 </div>
             </div>
         );
