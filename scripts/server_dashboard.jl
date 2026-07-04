@@ -791,21 +791,32 @@ end
 
 # Define the path to the React static build
 const BUILD_DIR = joinpath(@__DIR__, "..", "dashboard", "dist")
+const REPO_BASE = "/Gridap-NeuralOperators-GSoC2026"
 
 # Serve the static dashboard if the build directory exists
 if isdir(BUILD_DIR)
     @info "Serving static React dashboard from: $BUILD_DIR"
+    @info "Base URL path matched to GitHub Pages: $REPO_BASE"
 
-    # Mount the entire dist folder to the root route
-    staticfiles(BUILD_DIR, "/")
+    # Mount the entire dist folder to the GitHub Pages base route
+    staticfiles(BUILD_DIR, REPO_BASE)
 
-    # Optional: Catch-all route for SPA client-side routing (React Router)
-    # If a user refreshes a page on a specific route, serve index.html
-    @get "/*" function (req::HTTP.Request)
-        return HTTP.Response(200, ["Content-Type" => "text/html"], read(joinpath(BUILD_DIR, "index.html")))
+    # Redirect root requests (localhost:8080/) directly to the dashboard
+    @get "/" function (req::HTTP.Request)
+        return HTTP.Response(302, ["Location" => "$REPO_BASE/index.html"], body="")
+    end
+
+    # Catch-all route for SPA client-side routing. but the architecture is ready also for React Router.
+    @get "$REPO_BASE/*" function (req::HTTP.Request)
+        index_path = joinpath(BUILD_DIR, "index.html")
+        if isfile(index_path)
+            return HTTP.Response(200, ["Content-Type" => "text/html"], read(index_path))
+        else
+            return HTTP.Response(404, "index.html not found in build directory.")
+        end
     end
 else
-    @warn "Dashboard build directory not found. Please run 'npm run build' inside the 'dashboard' folder."
+    @warn "Dashboard build directory not found at $BUILD_DIR. Please run 'npm run build' inside the 'dashboard' folder."
 end
 
 # Start the Server
