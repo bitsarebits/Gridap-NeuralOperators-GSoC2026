@@ -104,6 +104,31 @@ This project includes a React web dashboard to orchestrate experiments and visua
 * **Live WebSocket Streaming:** Watch the loss function drop and see the predicted traveling waves update frame-by-frame during the training loop.
 * **Zero-Shot Error Analysis:** Instantly plot the absolute error between Gridap's FEM high-fidelity solution and the Neural Operator's response on unseen $\sigma$ values.
 
+
+## Public Deployment & GitHub Pages Workflow
+
+The dashboard is automatically deployed to a public GitHub Pages URL as a "Read-Only Gallery", fetching data from Firestore. Because the main development repository is kept **private**, this specific subfolder is mirrored to a separate **public** repository.
+
+### Updating the Live Dashboard (For Maintainers)
+
+The private repository acts as the absolute Source of Truth. All code changes and static builds (`npm run build` inside `/dashboard/`) must be committed there first.
+
+To synchronize the public repository and trigger a GitHub Pages update without affecting the private repository's history, run the following Git Subtree sequence from the root of the private repository:
+
+
+```bash
+# 1. Clean up any previous extraction branch
+git branch -D extract-scripts-branch
+
+# 2. Extract the subfolder into a clean, isolated branch
+git subtree split --prefix=experiments_NeuralOperators -b extract-scripts-branch
+
+# 3. Force push the isolated branch to the public remote repository
+git push public-origin extract-scripts-branch:main --force
+```
+
+*(Prerequisite: You must have the public remote configured via `git remote add public-origin <public_repo_url>`)*
+
 ---
 
 ## Parameter Definitions
