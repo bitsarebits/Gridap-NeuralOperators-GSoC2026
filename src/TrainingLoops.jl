@@ -143,9 +143,13 @@ function train_fno!(
             local current_loss = 0.0f0
 
             # Iterate over the batches in the dataloader
-            for data in dataloader
+            for batch in dataloader
+
+                # Move the mini-batch to the XLA device
+                batch_dev = batch |> XDEV
+
                 _, loss_val, _, train_state = Training.single_train_step!(
-                    AutoEnzyme(), MSELoss(), data, train_state; return_gradients=Val(false)
+                    AutoEnzyme(), MSELoss(), batch_dev, train_state; return_gradients=Val(false)
                 )
                 current_loss = Float32(loss_val)
             end
@@ -401,7 +405,7 @@ function prepare_and_train(
 
     # DataLoader setup on Device
     # Full batch (batchsize=N_sigma) is used as per the notebook
-    dataloader = DataLoader((u_in, u_out); batchsize=N_sigma, shuffle=true) |> XDEV
+    dataloader = DataLoader((u_in, u_out); batchsize=N_sigma, shuffle=true)
 
     rng = Random.default_rng()
     Random.seed!(rng, 42)
