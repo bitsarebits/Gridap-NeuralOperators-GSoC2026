@@ -1,5 +1,7 @@
 # Neural Operators Experiments
 
+[![Live Dashboard](https://img.shields.io/badge/Live_Dashboard-GitHub_Pages-blue?style=for-the-badge&logo=github)](https://bitsarebits.github.io/Gridap-NeuralOperators-GSoC2026/)
+
 This subfolder contains the Julia scripts designed to test the integration between `NeuralOperators.jl` and `GridapROMs.jl`. The workflow covers High-Fidelity FEM data generation, model training (with `Lux.jl` and `Enzyme.jl` for AD), and zero-shot evaluation. 
 
 To ensure strict reproducibility and avoid redundant computations, the entire pipeline is managed using `DrWatson.jl` and a custom SHA-256 caching mechanism (`HashRegistry.jl`).
@@ -78,6 +80,8 @@ julia scripts/run_all_models.jl fno 10000 0.05 1000
 ```
 
 ## Web Dashboard & Real-Time Visualization
+
+**Live Public Gallery:** [https://bitsarebits.github.io/Gridap-NeuralOperators-GSoC2026/](https://bitsarebits.github.io/Gridap-NeuralOperators-GSoC2026/)
 
 This project includes a React web dashboard to orchestrate experiments and visualize High-Fidelity snapshots, training progress, and zero-shot evaluations in real-time. 
 
