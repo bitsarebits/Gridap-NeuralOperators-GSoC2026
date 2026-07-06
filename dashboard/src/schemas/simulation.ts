@@ -17,6 +17,7 @@ export const defaultValues = {
     theta: 0.5,
     // Training
     epochs: 20000,
+    batch_size: 0, // full-batch as default for DeepONet
     // LR Scheduler
     lr_scheduler_type: "CosineAnnealing" as const,
     // CosineAnnealing
@@ -27,7 +28,7 @@ export const defaultValues = {
     rop_factor: 0.5,
     rop_min_lr: 0.000001, // 1e-6
     rop_start_lr: 0.001,
-    // DeepONet
+    // DeepONet and NOMAD
     step_x: 10,
     step_t: 5,
     m_sensors: 100,
@@ -66,6 +67,7 @@ const baseSchema = z.object({
 // DeepONet
 const deepONetSchema = z.object({
     model_type: z.literal("DeepONet"),
+    batch_size: z.number().int().min(0),
     step_x: z.number().int().positive(),
     step_t: z.number().int().positive(),
     m_sensors: z.number().int().positive(),
@@ -76,15 +78,28 @@ const deepONetSchema = z.object({
 // FNO
 const fnoSchema = z.object({
     model_type: z.literal("FNO"),
+    batch_size: z.number().int().min(0),
     nx_red: z.number().int().positive(),
     nt_red: z.number().int().positive(),
     hidden_channels: z.string().regex(/^[0-9]+(,\s*[0-9]+)*$/), // Validate the format "64, 64, 128"
     modes: z.string(),
 });
 
+// NOMAD
+const nomadSchema = z.object({
+    model_type: z.literal("NOMAD"),
+    batch_size: z.number().int().min(0),
+    step_x: z.number().int().positive(),
+    step_t: z.number().int().positive(),
+    m_sensors: z.number().int().positive(),
+    p_latent: z.number().int().positive(),
+    hidden: z.number().int().positive(),
+});
+
 const modelUnion = z.discriminatedUnion("model_type", [
     deepONetSchema,
     fnoSchema,
+    nomadSchema,
 ]);
 
 // Schedulers

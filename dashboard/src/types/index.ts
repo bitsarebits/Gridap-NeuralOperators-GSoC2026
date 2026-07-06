@@ -2,6 +2,7 @@
 export type DeepONetPayload = {
     type: "DeepONet";
     epochs: number;
+    batch_size: number;
     step_x: number;
     step_t: number;
     m_sensors: number;
@@ -12,10 +13,22 @@ export type DeepONetPayload = {
 export type FNOPayload = {
     type: "FNO";
     epochs: number;
+    batch_size: number;
     nx_red: number;
     nt_red: number;
     hidden_channels: string;
     modes: string;
+};
+
+export type NOMADPayload = {
+    type: "NOMAD";
+    epochs: number;
+    batch_size: number;
+    step_x: number;
+    step_t: number;
+    m_sensors: number;
+    p_latent: number;
+    hidden: number;
 };
 
 // Schedulers payloads
@@ -51,7 +64,7 @@ export interface SimulationPayload {
     eval_config: {
         sigma_test: number;
     };
-    solver: DeepONetPayload | FNOPayload;
+    solver: DeepONetPayload | FNOPayload | NOMADPayload;
     scheduler: CosineSchedulerPayload | PlateauSchedulerPayload;
 }
 

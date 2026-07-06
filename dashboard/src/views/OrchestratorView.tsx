@@ -47,10 +47,11 @@ const buildPayload = (data: SimulationFormValues): SimulationPayload => {
             sigma_test: data.sigma_test,
         },
         solver:
-            data.model_type === "DeepONet"
+            data.model_type === "DeepONet" || data.model_type === "NOMAD"
                 ? {
-                      type: "DeepONet",
+                      type: data.model_type,
                       epochs: data.epochs,
+                      batch_size: data.batch_size,
                       step_x: data.step_x!,
                       step_t: data.step_t!,
                       m_sensors: data.m_sensors!,
@@ -58,8 +59,9 @@ const buildPayload = (data: SimulationFormValues): SimulationPayload => {
                       hidden: data.hidden!,
                   }
                 : {
-                      type: "FNO",
+                      type: data.model_type,
                       epochs: data.epochs,
+                      batch_size: data.batch_size,
                       nx_red: data.nx_red!,
                       nt_red: data.nt_red!,
                       hidden_channels: data.hidden_channels!,

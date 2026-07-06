@@ -112,6 +112,7 @@ function build_configs(payload)
     if solver_data["type"] == "DeepONet"
         solver = DeepONetSolver(
             epochs=Int(solver_data["epochs"]),
+            batch_size=Int(solver_data["batch_size"]),
             step_x=Int(solver_data["step_x"]),
             step_t=Int(solver_data["step_t"]),
             m_sensors=Int(solver_data["m_sensors"]),
@@ -125,10 +126,22 @@ function build_configs(payload)
 
         solver = FNOSolver(
             epochs=Int(solver_data["epochs"]),
+            batch_size=Int(solver_data["batch_size"]),
             nx_red=Int(solver_data["nx_red"]),
             nt_red=Int(solver_data["nt_red"]),
             hidden_channels=parsed_hidden,
             modes=parsed_modes,
+            lr_scheduler=scheduler
+        )
+    elseif solver_data["type"] == "NOMAD"
+        solver = NOMADSolver(
+            epochs=Int(solver_data["epochs"]),
+            batch_size=Int(solver_data["batch_size"]),
+            step_x=Int(solver_data["step_x"]),
+            step_t=Int(solver_data["step_t"]),
+            m_sensors=Int(solver_data["m_sensors"]),
+            p_latent=Int(solver_data["p_latent"]),
+            hidden=Int(solver_data["hidden"]),
             lr_scheduler=scheduler
         )
     else
