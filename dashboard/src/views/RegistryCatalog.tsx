@@ -4,10 +4,17 @@ import { useMergedRegistry } from "../hooks/useMergedRegistry";
 
 interface RegistryCatalogProps {
     serverIsConnected: boolean;
+    onFineTune: (
+        modelHash: string,
+        modelType: string,
+        solverConfig: any,
+        femConfig: any,
+    ) => void;
 }
 
 export default function RegistryCatalog({
     serverIsConnected,
+    onFineTune,
 }: RegistryCatalogProps) {
     const {
         data: registry,
@@ -87,6 +94,7 @@ export default function RegistryCatalog({
                         femConfig={registry.data[dataHash]}
                         registry={registry}
                         serverIsConnected={serverIsConnected}
+                        onFineTune={onFineTune}
                     />
                 ))}
         </div>

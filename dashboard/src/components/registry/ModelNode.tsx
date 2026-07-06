@@ -4,6 +4,7 @@ import {
     ChevronDown,
     ChevronRight,
     Cloud,
+    GitFork,
     HardDrive,
 } from "lucide-react";
 import ConfigGrid, { FORBIDDEN_KEYS } from "../ui/ConfigGrid";
@@ -14,15 +15,24 @@ import DeleteButton from "../ui/DeleteButton";
 interface Props {
     modelHash: string;
     modelObj: any;
+    femConfig: any;
     registry: RegistryData;
     serverIsConnected: boolean;
+    onFineTune: (
+        modelHash: string,
+        modelType: string,
+        solverConfig: any,
+        femConfig: any,
+    ) => void;
 }
 
 export default function ModelNode({
     modelHash,
     modelObj,
+    femConfig,
     registry,
     serverIsConnected,
+    onFineTune,
 }: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
 
@@ -164,16 +174,36 @@ export default function ModelNode({
                         configObj={solver}
                     />
 
-                    {isLocal && (
-                        <div className="flex justify-end my-1">
+                    {/* ACTIONS ROW */}
+                    <div className="flex justify-end items-center gap-2 my-1">
+                        {/* Only show Fine Tune if the local Julia backend is reachable */}
+                        {serverIsConnected && (
+                            <button
+                                onClick={() =>
+                                    onFineTune(
+                                        modelHash,
+                                        solverType,
+                                        solver,
+                                        femConfig,
+                                    )
+                                }
+                                className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-lg shadow-sm transition-all"
+                                title="Load this configuration into the Orchestrator for fine-tuning"
+                            >
+                                <GitFork size={16} />
+                                Fine-Tune Weights
+                            </button>
+                        )}
+
+                        {isLocal && (
                             <DeleteButton
                                 targetHash={modelHash}
                                 targetType="model"
                                 mode="local"
-                                buttonLabel="Delete Local Model & All Linked Plots"
+                                buttonLabel="Delete Local Model"
                             />
-                        </div>
-                    )}
+                        )}
+                    </div>
 
                     {linkedEvals.length === 0 ? (
                         <p className="text-[11px] font-medium text-slate-400 italic pl-8 py-1">

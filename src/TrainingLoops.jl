@@ -1,6 +1,6 @@
 module TrainingLoops
 
-using Lux, Reactant, Enzyme, Optimisers, Random, Statistics, MLUtils
+using Lux, Reactant, Enzyme, Optimisers, Random, Statistics, MLUtils, DrWatson, JLD2
 
 # Custom modules
 using ..Solvers, ..DeepONetArch, ..FNOArch, ..NOMADArch, ..Utils, ..LRSchedulers
@@ -395,7 +395,25 @@ function prepare_and_train(
 
     rng = Random.default_rng()
     Random.seed!(rng, 42)
-    ps, st = Lux.setup(rng, deepONet) |> XDEV
+
+    local ps, st
+    if solver.pretrained_model_hash != ""
+        println("Loading pre-trained weights from hash: [$(solver.pretrained_model_hash)]")
+        log_cb(Dict("type" => "status", "stage" => "Loading pre-trained weights [$(solver.pretrained_model_hash)]..."))
+
+        solver_name = get_solver_name(solver)
+        weights_path = datadir("models", lowercase(solver_name), "model_$(solver.pretrained_model_hash).jld2")
+
+        if !isfile(weights_path)
+            error("Pre-trained model weights not found at $weights_path")
+        end
+
+        pretrained_data = load(weights_path)
+        ps = pretrained_data["ps"] |> XDEV
+        st = pretrained_data["st"] |> XDEV
+    else
+        ps, st = Lux.setup(rng, deepONet) |> XDEV
+    end
 
     # Training Loop Initialization
     println("\n--- Initializing Optimizer and TrainState ---")
@@ -483,7 +501,25 @@ function prepare_and_train(
 
     rng = Random.default_rng()
     Random.seed!(rng, 42)
-    ps, st = Lux.setup(rng, fno) |> XDEV
+
+    local ps, st
+    if solver.pretrained_model_hash != ""
+        println("Loading pre-trained weights from hash: [$(solver.pretrained_model_hash)]")
+        log_cb(Dict("type" => "status", "stage" => "Loading pre-trained weights [$(solver.pretrained_model_hash)]..."))
+
+        solver_name = get_solver_name(solver)
+        weights_path = datadir("models", lowercase(solver_name), "model_$(solver.pretrained_model_hash).jld2")
+
+        if !isfile(weights_path)
+            error("Pre-trained model weights not found at $weights_path")
+        end
+
+        pretrained_data = load(weights_path)
+        ps = pretrained_data["ps"] |> XDEV
+        st = pretrained_data["st"] |> XDEV
+    else
+        ps, st = Lux.setup(rng, fno) |> XDEV
+    end
 
     println("\n--- Initializing Optimizer and TrainState ---")
     opt = Adam(0.001f0)
@@ -581,7 +617,25 @@ function prepare_and_train(
 
     rng = Random.default_rng()
     Random.seed!(rng, 42)
-    ps, st = Lux.setup(rng, nomad_net) |> XDEV
+
+    local ps, st
+    if solver.pretrained_model_hash != ""
+        println("Loading pre-trained weights from hash: [$(solver.pretrained_model_hash)]")
+        log_cb(Dict("type" => "status", "stage" => "Loading pre-trained weights [$(solver.pretrained_model_hash)]..."))
+
+        solver_name = get_solver_name(solver)
+        weights_path = datadir("models", lowercase(solver_name), "model_$(solver.pretrained_model_hash).jld2")
+
+        if !isfile(weights_path)
+            error("Pre-trained model weights not found at $weights_path")
+        end
+
+        pretrained_data = load(weights_path)
+        ps = pretrained_data["ps"] |> XDEV
+        st = pretrained_data["st"] |> XDEV
+    else
+        ps, st = Lux.setup(rng, nomad_net) |> XDEV
+    end
 
     println("\n--- Initializing Optimizer and TrainState ---")
     opt = Adam(0.001f0)

@@ -8,6 +8,7 @@ export type DeepONetPayload = {
     m_sensors: number;
     p_latent: number;
     hidden: number;
+    pretrained_model_hash: string;
 };
 
 export type FNOPayload = {
@@ -18,6 +19,7 @@ export type FNOPayload = {
     nt_red: number;
     hidden_channels: string;
     modes: string;
+    pretrained_model_hash: string;
 };
 
 export type NOMADPayload = {
@@ -29,6 +31,7 @@ export type NOMADPayload = {
     m_sensors: number;
     p_latent: number;
     hidden: number;
+    pretrained_model_hash: string;
 };
 
 // Schedulers payloads

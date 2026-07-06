@@ -4,7 +4,7 @@ using SHA
 using JSON
 using DrWatson
 
-export config_hash, update_registry!, check_registry, load_registry, save_registry
+export config_hash, update_registry!, check_registry, load_registry, save_registry, get_latest_model
 
 const REGISTRY_PATH = datadir("registry.json")
 
@@ -92,6 +92,41 @@ Checks if a hash already exists in a specific category.
 function check_registry(category::String, hash_val::String)
     registry = load_registry()
     return haskey(registry[category], hash_val)
+end
+
+"""
+    get_latest_model(solver_type::String) -> String
+
+Scans the registry and the disk to find the most recently modified pre-trained
+model for a specific architecture. Useful for REPL workflows to chain fine-tuning.
+Returns an empty string if none is found.
+"""
+function get_latest_model(solver_type::String)
+    registry = load_registry()
+    models = registry["models"]
+
+    best_hash = ""
+    best_time = 0.0
+
+    for (h, m_obj) in models
+        # Match the architecture type (DeepONetSolver, FNOSolver, NOMADSolver)
+        if lowercase(m_obj["solver_type"]) == lowercase(solver_type)
+            file_path = datadir("models", lowercase(solver_type), "model_$h.jld2")
+            if isfile(file_path)
+                mtime = stat(file_path).mtime
+                if mtime > best_time
+                    best_time = mtime
+                    best_hash = h
+                end
+            end
+        end
+    end
+
+    if best_hash == ""
+        @warn "No pre-trained model found for $solver_type"
+    end
+
+    return best_hash
 end
 
 end # module

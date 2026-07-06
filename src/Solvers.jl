@@ -46,6 +46,9 @@ Base.@kwdef struct DeepONetSolver <: AbstractNeuralSolver
     m_sensors::Int = 100
     p_latent::Int = 64
     hidden::Int = 64
+
+    # Fine-Tuning
+    pretrained_model_hash::String = ""
 end
 
 Base.@kwdef struct FNOSolver <: AbstractNeuralSolver
@@ -59,6 +62,9 @@ Base.@kwdef struct FNOSolver <: AbstractNeuralSolver
     # Architecture
     hidden_channels::Tuple = (64, 64, 128)
     modes::Tuple = (32,)
+
+    # Fine-Tuning
+    pretrained_model_hash::String = ""
 end
 
 Base.@kwdef struct NOMADSolver <: AbstractNeuralSolver
@@ -73,6 +79,9 @@ Base.@kwdef struct NOMADSolver <: AbstractNeuralSolver
     m_sensors::Int = 200
     p_latent::Int = 64
     hidden::Int = 64
+
+    # Fine-Tuning
+    pretrained_model_hash::String = ""
 end
 
 # Evaluation Parameters

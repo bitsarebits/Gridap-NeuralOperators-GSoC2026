@@ -26,6 +26,7 @@ import CacheBadge from "../components/ui/CacheBadge";
 // Custom Hooks
 import { useServerCache } from "../hooks/useServerCache";
 import { useSimulationSocket } from "../hooks/useSimulationWebSocket";
+import { useEffect } from "react";
 
 // Helper: Build the payload
 const buildPayload = (data: SimulationFormValues): SimulationPayload => {
@@ -57,6 +58,7 @@ const buildPayload = (data: SimulationFormValues): SimulationPayload => {
                       m_sensors: data.m_sensors!,
                       p_latent: data.p_latent!,
                       hidden: data.hidden!,
+                      pretrained_model_hash: data.pretrained_model_hash,
                   }
                 : {
                       type: data.model_type,
@@ -66,6 +68,7 @@ const buildPayload = (data: SimulationFormValues): SimulationPayload => {
                       nt_red: data.nt_red!,
                       hidden_channels: data.hidden_channels!,
                       modes: data.modes!,
+                      pretrained_model_hash: data.pretrained_model_hash,
                   },
 
         scheduler:
@@ -96,13 +99,17 @@ const formatETA = (seconds: number) => {
 
 interface Props {
     serverStatus: "connected" | "connecting" | "disconnected";
+    initialFormValues?: SimulationFormValues;
 }
 
-export default function OrchestratorView({ serverStatus }: Props) {
+export default function OrchestratorView({
+    serverStatus,
+    initialFormValues,
+}: Props) {
     // Initialize the form with zod
     const methods = useForm<SimulationFormValues>({
         resolver: zodResolver(formSchema),
-        defaultValues: defaultValues,
+        defaultValues: initialFormValues || defaultValues,
     });
 
     // Watch all the form values
@@ -126,6 +133,17 @@ export default function OrchestratorView({ serverStatus }: Props) {
         abortSimulation,
         clearResult,
     } = useSimulationSocket(serverStatus);
+
+    // Effects
+    // If the user navigated from the Catalog via Fine-Tune button, reset the form forcefully
+    // to update the UI fields even if the component was already mounted.
+    useEffect(() => {
+        if (initialFormValues) {
+            methods.reset(initialFormValues);
+            // Scroll to top to ensure user sees the form
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+    }, [initialFormValues, methods]);
 
     const onSubmit = async (data: SimulationFormValues) => {
         try {

@@ -16,6 +16,12 @@ interface Props {
     femConfig: any;
     registry: RegistryData;
     serverIsConnected: boolean;
+    onFineTune: (
+        modelHash: string,
+        modelType: string,
+        solverConfig: any,
+        femConfig: any,
+    ) => void;
 }
 
 export default function DatasetNode({
@@ -23,6 +29,7 @@ export default function DatasetNode({
     femConfig,
     registry,
     serverIsConnected,
+    onFineTune,
 }: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
 
@@ -163,8 +170,10 @@ export default function DatasetNode({
                                 key={modelHash}
                                 modelHash={modelHash}
                                 modelObj={modelObj}
+                                femConfig={femConfig}
                                 registry={registry}
                                 serverIsConnected={serverIsConnected}
+                                onFineTune={onFineTune}
                             />
                         ))
                     )}

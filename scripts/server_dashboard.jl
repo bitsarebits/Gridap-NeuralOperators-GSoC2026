@@ -118,7 +118,8 @@ function build_configs(payload)
             m_sensors=Int(solver_data["m_sensors"]),
             p_latent=Int(solver_data["p_latent"]),
             hidden=Int(solver_data["hidden"]),
-            lr_scheduler=scheduler
+            lr_scheduler=scheduler,
+            pretrained_model_hash=String(get(solver_data, "pretrained_model_hash", ""))
         )
     elseif solver_data["type"] == "FNO"
         parsed_hidden = Tuple(parse.(Int, split(solver_data["hidden_channels"], ",")))
@@ -131,7 +132,8 @@ function build_configs(payload)
             nt_red=Int(solver_data["nt_red"]),
             hidden_channels=parsed_hidden,
             modes=parsed_modes,
-            lr_scheduler=scheduler
+            lr_scheduler=scheduler,
+            pretrained_model_hash=String(get(solver_data, "pretrained_model_hash", ""))
         )
     elseif solver_data["type"] == "NOMAD"
         solver = NOMADSolver(
@@ -142,7 +144,8 @@ function build_configs(payload)
             m_sensors=Int(solver_data["m_sensors"]),
             p_latent=Int(solver_data["p_latent"]),
             hidden=Int(solver_data["hidden"]),
-            lr_scheduler=scheduler
+            lr_scheduler=scheduler,
+            pretrained_model_hash=String(get(solver_data, "pretrained_model_hash", ""))
         )
     else
         error("Unknown Solver Type: $(solver_data["type"])")

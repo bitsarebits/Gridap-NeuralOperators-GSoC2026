@@ -41,6 +41,7 @@ export const defaultValues = {
     modes: "32",
     // Test and plot
     sigma_test: 0.03,
+    pretrained_model_hash: "",
 };
 
 const baseSchema = z.object({
@@ -73,6 +74,7 @@ const deepONetSchema = z.object({
     m_sensors: z.number().int().positive(),
     p_latent: z.number().int().positive(),
     hidden: z.number().int().positive(),
+    pretrained_model_hash: z.string(),
 });
 
 // FNO
@@ -83,6 +85,7 @@ const fnoSchema = z.object({
     nt_red: z.number().int().positive(),
     hidden_channels: z.string().regex(/^[0-9]+(,\s*[0-9]+)*$/), // Validate the format "64, 64, 128"
     modes: z.string(),
+    pretrained_model_hash: z.string(),
 });
 
 // NOMAD
@@ -94,6 +97,7 @@ const nomadSchema = z.object({
     m_sensors: z.number().int().positive(),
     p_latent: z.number().int().positive(),
     hidden: z.number().int().positive(),
+    pretrained_model_hash: z.string(),
 });
 
 const modelUnion = z.discriminatedUnion("model_type", [
