@@ -2,7 +2,7 @@ module Solvers
 
 using ..LRSchedulers
 
-export AbstractNeuralSolver, DeepONetSolver, FNOSolver
+export AbstractNeuralSolver, DeepONetSolver, FNOSolver, NOMADSolver
 export FEMConfig, EvalConfig
 export get_solver_name
 
@@ -37,6 +37,7 @@ end
 Base.@kwdef struct DeepONetSolver <: AbstractNeuralSolver
     # Training
     epochs::Int = 20000
+    batch_size::Int = 0  # 0 indicates Full Batch
     step_x::Int = 10
     step_t::Int = 5
     lr_scheduler::AbstractLRScheduler = CosineAnnealing()
@@ -50,6 +51,7 @@ end
 Base.@kwdef struct FNOSolver <: AbstractNeuralSolver
     # Training
     epochs::Int = 20000
+    batch_size::Int = 32 # Default mini-batch
     nx_red::Int = 256
     nt_red::Int = 50
     lr_scheduler::AbstractLRScheduler = CosineAnnealing()
@@ -57,6 +59,20 @@ Base.@kwdef struct FNOSolver <: AbstractNeuralSolver
     # Architecture
     hidden_channels::Tuple = (64, 64, 128)
     modes::Tuple = (32,)
+end
+
+Base.@kwdef struct NOMADSolver <: AbstractNeuralSolver
+    # Training
+    epochs::Int = 10000
+    batch_size::Int = 2048 # Strict mini-batch requirement for flattened coordinates
+    step_x::Int = 10
+    step_t::Int = 5
+    lr_scheduler::AbstractLRScheduler = CosineAnnealing()
+
+    # Architecture
+    m_sensors::Int = 200
+    p_latent::Int = 64
+    hidden::Int = 64
 end
 
 # Evaluation Parameters

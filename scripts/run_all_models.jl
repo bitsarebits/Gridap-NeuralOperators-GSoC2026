@@ -87,8 +87,7 @@ if abspath(PROGRAM_FILE) == @__FILE__
     if m_str == "fno"
         solver = FNOSolver(epochs=epochs_val)
     elseif m_str == "nomad"
-        # solver = NOMADSolver(epochs=epochs_val)
-        error("NOMAD not implemented yet")
+        solver = NOMADSolver(epochs=epochs_val)
     else
         solver = DeepONetSolver(epochs=epochs_val)
     end

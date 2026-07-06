@@ -3,7 +3,7 @@ module Inference
 using Lux, Reactant
 
 # Custom modules
-using ..Solvers, ..DeepONetArch, ..FNOArch, ..Utils
+using ..Solvers, ..DeepONetArch, ..FNOArch, ..NOMADArch, ..Utils
 
 export evaluate_and_predict
 
@@ -152,6 +152,60 @@ function evaluate_and_predict(solver::FNOSolver, weights_data::AbstractDict, fem
     u_pred_matrix = u_pred_cpu[:, :, 1]
 
     return u_pred_matrix, t_grid_pred, t_nn
+end
+
+"""
+    evaluate_and_predict(solver::NOMADSolver, weights_data::Dict, fem_data::Dict, sigma_test::Float64)
+"""
+function evaluate_and_predict(
+    solver::NOMADSolver,
+    weights_data::Dict,
+    fem_data::Dict,
+    sigma_test::Float64
+)
+    ps = weights_data["ps"] |> XDEV
+    st = weights_data["st"] |> XDEV
+    max_u = weights_data["max_u"]
+
+    nomad_net = NOMADArch.build_nomad(
+        m_sensors=solver.m_sensors,
+        p_latent=solver.p_latent,
+        hidden=solver.hidden
+    )
+
+    x_grid = fem_data["x_grid"]
+    t_grid = fem_data["t_grid"]
+    fem_config = fem_data["config"]
+    N_x = length(x_grid)
+    N_t = length(t_grid)
+
+    x_sensors = range(-fem_config["L"]/2, fem_config["L"]/2, length=solver.m_sensors)
+    pi_f32 = Float32(π)
+    u₀(x) = (1.0f0 / √(2.0f0 * pi_f32 * Float32(sigma_test))) * exp(-x^2 / (2.0f0 * Float32(sigma_test)))
+    f_in = Float32.(u₀.(x_sensors))
+
+    u_pred_matrix = zeros(Float32, N_x, N_t)
+
+    t_nn = @elapsed begin
+        Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
+            # Process one timestep at a time to keep VRAM usage low
+            for (t_idx, t) in enumerate(t_grid)
+
+                # Repeat the sensor array for every x coordinate in this time step
+                u_test = repeat(f_in, 1, N_x) |> XDEV
+
+                # Create the spatial-temporal coordinates for the whole grid at time t
+                y_test = Float32.(vcat(x_grid', fill(Float32(t), 1, N_x))) |> XDEV
+
+                pred_dev = @jit(nomad_net((u_test, y_test), ps, st))
+                pred_cpu = first(pred_dev) |> CDEV
+
+                u_pred_matrix[:, t_idx] .= vec(pred_cpu) .* max_u
+            end
+        end
+    end
+
+    return u_pred_matrix, t_grid, t_nn
 end
 
 end # module
