@@ -1,16 +1,22 @@
 import { useState } from "react";
 import {
+    AlertCircle,
     Brain,
     ChevronDown,
     ChevronRight,
     Cloud,
+    DownloadCloud,
     GitFork,
     HardDrive,
+    Loader2,
 } from "lucide-react";
 import ConfigGrid, { FORBIDDEN_KEYS } from "../ui/ConfigGrid";
 import EvaluationNode from "./EvaluationNode";
-import type { RegistryData } from "../../types";
+import type { RegistryData, SyncPayload } from "../../types";
 import DeleteButton from "../ui/DeleteButton";
+import { useQueryClient } from "@tanstack/react-query";
+import { syncExperimentLocally } from "../../api";
+import SyncWorkspaceButton from "../ui/SyncWorkspaceButton";
 
 interface Props {
     modelHash: string;
@@ -35,6 +41,11 @@ export default function ModelNode({
     onFineTune,
 }: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
+
+    // Sync state
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncError, setSyncError] = useState<string | null>(null);
+    const queryClient = useQueryClient();
 
     // Metadata flags
     const isShared = modelObj._isShared;
@@ -119,6 +130,57 @@ export default function ModelNode({
 
     const compactConfigString = buildCompactModelString();
 
+    // Extract data info for the payload
+    const dataHash = modelObj.data_hash;
+    const dataObj = registry.data[dataHash] || {};
+
+    // Build the shared partial SyncPayload
+    const syncPayload: SyncPayload = {
+        model_type: solverType,
+        hashes: {
+            data_hash: dataHash,
+            model_hash: modelHash,
+        },
+        fem_config: femConfig,
+        solver_config: solver,
+        data_url: dataObj.data_url ?? undefined,
+        model_url: modelObj.model_url ?? undefined,
+    };
+
+    // Unified handler for the Fine-Tune / Sync action
+    const handleFineTuneAction = async () => {
+        if (isLocal) {
+            // Fast-path: already on disk, trigger directly
+            onFineTune(modelHash, solverType, solver, femConfig);
+            return;
+        }
+
+        // Needs to be pulled from remote first
+        setIsSyncing(true);
+        setSyncError(null);
+        try {
+            // Call the sync API with the shared payload
+            const res = await syncExperimentLocally(syncPayload);
+
+            if (res.status === "success") {
+                // Invalidate query to update UI badges (Cloud -> Cloud + Local)
+                queryClient.invalidateQueries({
+                    queryKey: ["registry", "merged"],
+                });
+
+                // Immediately proceed to Orchestrator with the now-local data
+                onFineTune(modelHash, solverType, solver, femConfig);
+            }
+        } catch (err: any) {
+            setSyncError(
+                err.response?.data?.message ||
+                    "Failed to sync remote weights before fine-tuning.",
+            );
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     return (
         <div className="bg-white border-t border-slate-100 transition-all">
             <div
@@ -175,33 +237,71 @@ export default function ModelNode({
                     />
 
                     {/* ACTIONS ROW */}
-                    <div className="flex justify-end items-center gap-2 my-1">
-                        {/* Only show Fine Tune if the local Julia backend is reachable */}
+                    <div className="flex justify-end items-start gap-2 my-1">
+                        {/* Standard Sync Button */}
+                        {isShared && !isLocal && serverIsConnected && (
+                            <SyncWorkspaceButton
+                                isLocal={isLocal}
+                                syncPayload={syncPayload}
+                                buttonLabel="Sync Model Weights"
+                            />
+                        )}
+
+                        {/* Fine Tune / Sync Button Container */}
                         {serverIsConnected && (
-                            <button
-                                onClick={() =>
-                                    onFineTune(
-                                        modelHash,
-                                        solverType,
-                                        solver,
-                                        femConfig,
-                                    )
-                                }
-                                className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-lg shadow-sm transition-all"
-                                title="Load this configuration into the Orchestrator for fine-tuning"
-                            >
-                                <GitFork size={16} />
-                                Fine-Tune Weights
-                            </button>
+                            <div className="flex flex-col items-end gap-1">
+                                <button
+                                    onClick={handleFineTuneAction}
+                                    disabled={isSyncing}
+                                    className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-lg shadow-sm transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                                    title={
+                                        isLocal
+                                            ? "Load this configuration for fine-tuning or cloning"
+                                            : "Sync data to local workspace and load configuration"
+                                    }
+                                >
+                                    {isSyncing ? (
+                                        <Loader2
+                                            size={16}
+                                            className="animate-spin"
+                                        />
+                                    ) : isLocal ? (
+                                        <GitFork size={16} />
+                                    ) : (
+                                        <DownloadCloud size={16} />
+                                    )}
+
+                                    {isSyncing
+                                        ? "Syncing Weights..."
+                                        : isLocal
+                                          ? "Fine-Tune Weights"
+                                          : "Sync & Fine-Tune"}
+                                </button>
+
+                                {/* Error Message Display */}
+                                {syncError && (
+                                    <div className="flex items-center gap-1 text-red-600 text-xs font-medium max-w-xs text-right mt-1">
+                                        <AlertCircle
+                                            size={14}
+                                            className="shrink-0"
+                                        />
+                                        <span>{syncError}</span>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {isLocal && (
-                            <DeleteButton
-                                targetHash={modelHash}
-                                targetType="model"
-                                mode="local"
-                                buttonLabel="Delete Local Model"
-                            />
+                            <div className="pt-0">
+                                {" "}
+                                {/* Wrapper to align perfectly with the button row */}
+                                <DeleteButton
+                                    targetHash={modelHash}
+                                    targetType="model"
+                                    mode="local"
+                                    buttonLabel="Delete Local Model"
+                                />
+                            </div>
                         )}
                     </div>
 

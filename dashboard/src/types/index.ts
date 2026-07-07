@@ -120,17 +120,17 @@ export interface ShareResponse {
 }
 
 export interface SyncPayload {
-    eval_hash: string;
-    model_type: string;
+    eval_hash?: string;
+    model_type?: string;
     hashes: {
         data_hash: string;
-        model_hash: string;
-        eval_hash: string;
+        model_hash?: string;
+        eval_hash?: string;
     };
     fem_config: any;
-    solver_config: any;
-    eval_config: any;
-    data_url: string;
-    model_url: string;
-    image_url: string;
+    solver_config?: any;
+    eval_config?: any;
+    data_url?: string;
+    model_url?: string;
+    image_url?: string;
 }

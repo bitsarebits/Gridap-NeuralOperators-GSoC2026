@@ -109,17 +109,31 @@ function build_configs(payload)
     solver_data = payload["solver"]
     local solver::AbstractNeuralSolver
 
+    # Safe extractors for retro-compatibility
+    safe_batch_size(default_val::Int) =
+        haskey(solver_data, "batch_size") &&
+            !isnothing(solver_data["batch_size"]) ?
+        Int(solver_data["batch_size"]) :
+        default_val
+
+    function safe_hash(data::AbstractDict)
+        h = get(data, "pretrained_model_hash", "")
+        return isnothing(h) ? "" : String(h)
+    end
+
+    pm_hash = safe_hash(solver_data)
+
     if solver_data["type"] == "DeepONet"
         solver = DeepONetSolver(
             epochs=Int(solver_data["epochs"]),
-            batch_size=Int(solver_data["batch_size"]),
+            batch_size=safe_batch_size(0),
             step_x=Int(solver_data["step_x"]),
             step_t=Int(solver_data["step_t"]),
             m_sensors=Int(solver_data["m_sensors"]),
             p_latent=Int(solver_data["p_latent"]),
             hidden=Int(solver_data["hidden"]),
             lr_scheduler=scheduler,
-            pretrained_model_hash=String(get(solver_data, "pretrained_model_hash", ""))
+            pretrained_model_hash=pm_hash
         )
     elseif solver_data["type"] == "FNO"
         parsed_hidden = Tuple(parse.(Int, split(solver_data["hidden_channels"], ",")))
@@ -127,25 +141,25 @@ function build_configs(payload)
 
         solver = FNOSolver(
             epochs=Int(solver_data["epochs"]),
-            batch_size=Int(solver_data["batch_size"]),
+            batch_size=safe_batch_size(32),
             nx_red=Int(solver_data["nx_red"]),
             nt_red=Int(solver_data["nt_red"]),
             hidden_channels=parsed_hidden,
             modes=parsed_modes,
             lr_scheduler=scheduler,
-            pretrained_model_hash=String(get(solver_data, "pretrained_model_hash", ""))
+            pretrained_model_hash=pm_hash
         )
     elseif solver_data["type"] == "NOMAD"
         solver = NOMADSolver(
             epochs=Int(solver_data["epochs"]),
-            batch_size=Int(solver_data["batch_size"]),
+            batch_size=safe_batch_size(2048),
             step_x=Int(solver_data["step_x"]),
             step_t=Int(solver_data["step_t"]),
             m_sensors=Int(solver_data["m_sensors"]),
             p_latent=Int(solver_data["p_latent"]),
             hidden=Int(solver_data["hidden"]),
             lr_scheduler=scheduler,
-            pretrained_model_hash=String(get(solver_data, "pretrained_model_hash", ""))
+            pretrained_model_hash=pm_hash
         )
     else
         error("Unknown Solver Type: $(solver_data["type"])")
@@ -562,7 +576,7 @@ end
     end
 end
 
-# Sync simulation endpoint: Downloads remote experiments to local DrWatson workspace
+# Sync simulation endpoint: Smart hierarchical download to local DrWatson workspace
 @post "/api/sync_experiment" function (req::HTTP.Request)
     # Parse Payload
     local payload::Dict{String,Any}
@@ -573,110 +587,152 @@ end
             JSON3.write(Dict("status" => "error", "message" => "Invalid JSON payload.")))
     end
 
-    eval_hash = get(payload, "eval_hash", nothing)
-    if isnothing(eval_hash)
+    # Extract hashes safely (allowing partial syncs)
+    hashes = get(payload, "hashes", Dict{String,Any}())
+    data_hash = get(hashes, "data_hash", nothing)
+    model_hash = get(hashes, "model_hash", nothing)
+
+    # Check both root and hashes dictionary for eval_hash for maximum compatibility
+    eval_hash = get(payload, "eval_hash", get(hashes, "eval_hash", nothing))
+
+    if isnothing(data_hash) && isnothing(model_hash) && isnothing(eval_hash)
         return HTTP.Response(400, ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => "Missing eval_hash.")))
+            JSON3.write(Dict("status" => "error", "message" => "No hashes provided. Nothing to sync.")))
     end
 
-    @info "Starting sync for experiment $eval_hash into local workspace..."
-
-    # Extract hashes and URLs
-    hashes = payload["hashes"]
-    data_hash = hashes["data_hash"]
-    model_hash = hashes["model_hash"]
-
-    # Define DrWatson destination paths
-    solver_type = lowercase(payload["model_type"])
-
-    data_dest = datadir("sims", "data_$(data_hash).jld2")
-    model_dest = datadir("models", solver_type, "model_$(model_hash).jld2")
-    plot_dest = plotsdir(solver_type, "eval_$(eval_hash).png")
-
-    # Ensure directories exist
-    mkpath(dirname(model_dest))
-    mkpath(dirname(plot_dest))
-
-    # Download files synchronously
-    try
-        try
-            if !isfile(data_dest)
-                @info "Downloading FEM data [$(data_hash)]..."
-                HTTP.download(payload["data_url"], data_dest)
-            else
-                @info "FEM data [$(data_hash)] already exists locally. Skipping download."
-            end
-
-            if !isfile(model_dest)
-                @info "Downloading Model weights [$(model_hash)]..."
-                HTTP.download(payload["model_url"], model_dest)
-            else
-                @info "Model weights [$(model_hash)] already exist locally. Skipping download."
-            end
-
-            if !isfile(plot_dest)
-                @info "Downloading Evaluation plot [$(eval_hash)]..."
-                HTTP.download(payload["image_url"], plot_dest)
-            else
-                @info "Evaluation plot [$(eval_hash)] already exists locally. Skipping download."
-            end
-        catch e
-            @error "Failed to download files from Firebase Storage" exception=(e, catch_backtrace())
-            return HTTP.Response(500, ["Content-Type" => "application/json"],
-                JSON3.write(Dict("status" => "error", "message" => "Network error during file download.")))
-        end
-    catch e
-        @error "Failed to download files from Firebase Storage" exception=(e, catch_backtrace())
-        return HTTP.Response(500, ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => "Network error during file download.")))
-    end
+    @info "Starting hierarchical sync into local workspace..."
 
     # Internal helper to clean up database and frontend metadata
     function clean_config(d::Dict)
-        forbidden_keys = ["_isShared", "_isLocal", "model_url", "data_url", "image_url", "data_hash", "model_hash", "eval_hash", "solver_type", "model_type"]
+        forbidden_keys = ["_isShared", "_isLocal", "model_url", "data_url", "image_url", "data_hash", "model_hash", "eval_hash", "solver_type", "model_type", "download_url"]
         return Dict{String,Any}(string(k) => v for (k, v) in pairs(d) if !(string(k) in forbidden_keys))
     end
 
-    # Update Local Registry via HashRegistry
-    try
-        registry = HashRegistry.load_registry()
+    registry = HashRegistry.load_registry()
+    sync_success = true
+    model_type_raw = get(payload, "model_type", "")
+    solver_type = lowercase(model_type_raw)
 
-        # Insert if not exists
-        if !haskey(registry["data"], data_hash)
+
+    # SYNC FEM DATA
+    if !isnothing(data_hash) && haskey(payload, "fem_config")
+        data_dest = datadir("sims", "data_$(data_hash).jld2")
+        data_url = get(payload, "data_url", "")
+
+        if !isfile(data_dest) && !isempty(data_url)
+            mkpath(dirname(data_dest))
+            @info "Downloading FEM data [$(data_hash)]..."
+            try
+                HTTP.download(data_url, data_dest)
+            catch e
+                @error "Failed to download FEM Data" exception=(e, catch_backtrace())
+                sync_success = false
+            end
+        else
+            @info "FEM data [$(data_hash)] already exists or URL missing. Skipping download."
+        end
+
+        if sync_success && !haskey(registry["data"], data_hash)
             registry["data"][data_hash] = clean_config(payload["fem_config"])
         end
-
-        if !haskey(registry["models"], model_hash)
-            # Reconstruct the solver object expected by local cache
-            solver_dict = clean_config(payload["solver_config"])
-            registry["models"][model_hash] = Dict(
-                "solver_type" => payload["model_type"],
-                "solver" => solver_dict,
-                "data_hash" => data_hash
-            )
-        end
-
-        if !haskey(registry["evaluations"], eval_hash)
-            registry["evaluations"][eval_hash] = Dict(
-                "model_hash" => model_hash,
-                "eval_config" => clean_config(payload["eval_config"])
-            )
-        end
-
-        HashRegistry.save_registry(registry)
-        @info "Registry updated successfully for $eval_hash."
-
-    catch e
-        @error "Failed to update local registry.json" exception=(e, catch_backtrace())
-        return HTTP.Response(500, ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => "Failed to update local cache registry.")))
     end
 
-    return JSON3.write(Dict(
-        "status" => "success",
-        "message" => "Experiment synced to local workspace."
-    ))
+
+    # SYNC NEURAL MODEL WEIGHTS
+    if sync_success && !isnothing(model_hash) && haskey(payload, "solver_config")
+        if isempty(solver_type)
+            @warn "Model type missing. Cannot sync weights."
+        else
+            model_dest = datadir("models", solver_type, "model_$(model_hash).jld2")
+            model_url = get(payload, "model_url", "")
+
+            if !isfile(model_dest) && !isempty(model_url)
+                mkpath(dirname(model_dest))
+                @info "Downloading Model weights [$(model_hash)]..."
+                try
+                    HTTP.download(model_url, model_dest)
+                catch e
+                    @error "Failed to download Model weights" exception=(e, catch_backtrace())
+                    sync_success = false
+                end
+            else
+                @info "Model weights [$(model_hash)] already exist or URL missing. Skipping download."
+            end
+
+            # Note: We link the model to the data_hash it was trained on
+            if sync_success && !haskey(registry["models"], model_hash)
+
+                cleaned_solver = clean_config(payload["solver_config"])
+
+                # Schema evolution padding for old models downloaded from Firebase
+                if !haskey(cleaned_solver, "batch_size")
+                    default_bs = solver_type == "nomad" ? 2048 : (solver_type == "fno" ? 32 : 0)
+                    cleaned_solver["batch_size"] = default_bs
+                end
+
+                if !haskey(cleaned_solver, "pretrained_model_hash")
+                    cleaned_solver["pretrained_model_hash"] = ""
+                end
+
+                registry["models"][model_hash] = Dict(
+                    "solver_type" => model_type_raw,
+                    "solver" => cleaned_solver,
+                    "data_hash" => isnothing(data_hash) ? "" : data_hash
+                )
+            end
+        end
+    end
+
+    # SYNC ZERO-SHOT EVALUATION PLOT
+    if sync_success && !isnothing(eval_hash) && haskey(payload, "eval_config")
+        if isempty(solver_type)
+            @warn "Model type missing. Cannot sync plot."
+        else
+            plot_dest = plotsdir(solver_type, "eval_$(eval_hash).png")
+            image_url = get(payload, "image_url", "")
+
+            if !isfile(plot_dest) && !isempty(image_url)
+                mkpath(dirname(plot_dest))
+                @info "Downloading Evaluation plot [$(eval_hash)]..."
+                try
+                    HTTP.download(image_url, plot_dest)
+                catch e
+                    @error "Failed to download Evaluation Plot" exception=(e, catch_backtrace())
+                    sync_success = false
+                end
+            else
+                @info "Evaluation plot [$(eval_hash)] already exists or URL missing. Skipping download."
+            end
+
+            if sync_success && !haskey(registry["evaluations"], eval_hash)
+                registry["evaluations"][eval_hash] = Dict(
+                    "model_hash" => isnothing(model_hash) ? "" : model_hash,
+                    "eval_config" => clean_config(payload["eval_config"])
+                )
+            end
+        end
+    end
+
+    # FINAL REGISTRY UPDATE
+    if sync_success
+        try
+            HashRegistry.save_registry(registry)
+            @info "Registry successfully updated for synced entities."
+            return JSON3.write(Dict(
+                "status" => "success",
+                "message" => "Hierarchy synced successfully to local workspace."
+            ))
+        catch e
+            @error "Failed to save registry.json" exception=(e, catch_backtrace())
+            return HTTP.Response(500, ["Content-Type" => "application/json"],
+                JSON3.write(Dict("status" => "error", "message" => "Downloads succeeded, but registry save failed.")))
+        end
+    else
+        return HTTP.Response(500, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Network error during one or more file downloads.")))
+    end
 end
+
 
 # Delete endpoint (Local & Cloud)
 @post "/api/delete_local" function (req::HTTP.Request)

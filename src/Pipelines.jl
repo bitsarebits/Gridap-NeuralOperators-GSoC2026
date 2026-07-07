@@ -42,25 +42,28 @@ function execute_train_pipeline(
         end
 
         parent_model_entry = registry["models"][parent_hash]
-        parent_solver = parent_model_entry["solver"]
+
+        # Backward compatibility for legacy flat JSON schemas
+        parent_solver = haskey(parent_model_entry, "solver") ? parent_model_entry["solver"] : parent_model_entry
+        parent_type = get(parent_model_entry, "solver_type", get(parent_model_entry, "model_type", "unknown"))
 
         # Verify Model Type
-        if lowercase(parent_model_entry["solver_type"]) != lowercase(solver_name)
-            error("Architecture mismatch! Cannot fine-tune a $(parent_model_entry["solver_type"]) into a $solver_name.")
+        if parent_type != "unknown" && lowercase(parent_type) != lowercase(solver_name)
+            error("Architecture mismatch! Cannot fine-tune a $(parent_type) into a $solver_name.")
         end
 
-        # Verify specific structural fields based on the solver type
+        # Verify specific structural fields based on the solver type (using safe 'get' to prevent KeyError on older registries)
         if solver isa DeepONetSolver || solver isa NOMADSolver
-            if parent_solver["m_sensors"] != solver.m_sensors ||
-               parent_solver["p_latent"] != solver.p_latent ||
-               parent_solver["hidden"] != solver.hidden ||
-               parent_solver["step_x"] != solver.step_x ||
-               parent_solver["step_t"] != solver.step_t
+            if get(parent_solver, "m_sensors", 100) != solver.m_sensors ||
+               get(parent_solver, "p_latent", 64) != solver.p_latent ||
+               get(parent_solver, "hidden", 64) != solver.hidden ||
+               get(parent_solver, "step_x", 10) != solver.step_x ||
+               get(parent_solver, "step_t", 5) != solver.step_t
                 error("Architecture mismatch! m_sensors, p_latent, hidden, step_x and step_t must exactly match the pre-trained model.")
             end
         elseif solver isa FNOSolver
-            if parent_solver["nx_red"] != solver.nx_red ||
-               parent_solver["nt_red"] != solver.nt_red
+            if get(parent_solver, "nx_red", 256) != solver.nx_red ||
+               get(parent_solver, "nt_red", 50) != solver.nt_red
                 error("Architecture mismatch! FNO grid resolution (nx_red, nt_red) must exactly match the pre-trained model.")
             end
         end

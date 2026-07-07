@@ -8,8 +8,9 @@ import {
 } from "lucide-react";
 import ConfigGrid, { FORBIDDEN_KEYS } from "../ui/ConfigGrid";
 import ModelNode from "./ModelNode";
-import type { RegistryData } from "../../types";
+import type { RegistryData, SyncPayload } from "../../types";
 import DeleteButton from "../ui/DeleteButton";
+import SyncWorkspaceButton from "../ui/SyncWorkspaceButton";
 
 interface Props {
     dataHash: string;
@@ -94,6 +95,14 @@ export default function DatasetNode({
         return parts.join(" • ");
     };
 
+    const syncPayload: SyncPayload = {
+        hashes: {
+            data_hash: dataHash,
+        },
+        fem_config: femConfig,
+        data_url: femConfig.data_url ?? undefined,
+    };
+
     return (
         <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden transition-all">
             <div
@@ -155,6 +164,16 @@ export default function DatasetNode({
                                 targetType="data"
                                 mode="local"
                                 buttonLabel="Delete Local Dataset & All Linked Models"
+                            />
+                        </div>
+                    )}
+
+                    {isShared && !isLocal && serverIsConnected && (
+                        <div className="flex justify-end my-1">
+                            <SyncWorkspaceButton
+                                isLocal={isLocal}
+                                syncPayload={syncPayload}
+                                buttonLabel="Sync FEM Dataset"
                             />
                         </div>
                     )}

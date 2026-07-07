@@ -7,9 +7,14 @@ import type { SyncPayload } from "../../types";
 interface Props {
     syncPayload: SyncPayload;
     isLocal: boolean;
+    buttonLabel?: string;
 }
 
-export default function SyncWorkspaceButton({ syncPayload, isLocal }: Props) {
+export default function SyncWorkspaceButton({
+    syncPayload,
+    isLocal,
+    buttonLabel = "Sync to Workspace",
+}: Props) {
     const [isSyncing, setIsSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const queryClient = useQueryClient();
@@ -45,14 +50,14 @@ export default function SyncWorkspaceButton({ syncPayload, isLocal }: Props) {
                 onClick={handleSync}
                 disabled={isSyncing}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg font-semibold transition-all shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
-                title="Download FEM data and Model weights to your local DrWatson folders"
+                title="Download required files to your local DrWatson folders"
             >
                 {isSyncing ? (
                     <Loader2 size={18} className="animate-spin" />
                 ) : (
                     <DownloadCloud size={18} />
                 )}
-                {isSyncing ? "Syncing to local..." : "Sync to Workspace"}
+                {isSyncing ? "Syncing..." : buttonLabel}
             </button>
 
             {error && (
