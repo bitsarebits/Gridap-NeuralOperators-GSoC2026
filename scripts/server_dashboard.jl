@@ -53,6 +53,18 @@ const SESSION_CHANNELS = Dict{String,Channel{String}}()
 # Keep track of the WebSocket sender tasks to ensure type-stability
 const SENDER_TASKS = Dict{String,Task}()
 
+
+# Global Thread-Safe Flag for Shutdown state
+const IS_SHUTTING_DOWN = Threads.Atomic{Bool}(false)
+const SHUTDOWN_EVENT = Threads.Event()
+
+# Lock to edit the dictionaries
+const STATE_LOCK = ReentrantLock()
+
+# Track the WS connection to shutdown them
+const ACTIVE_WS = Set{HTTP.WebSocket}()
+
+
 # CORS Middleware
 # Required during development because Vite runs on port 5173
 # and Julia runs on port 8080. This allows them to communicate.
@@ -175,7 +187,17 @@ end
 
 # Endpoint WebSocket
 @websocket "/ws/simulate" function (ws::HTTP.WebSocket)
+    # Reject connection if server is shutting down
+    if IS_SHUTTING_DOWN[]
+        HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "error", "message" => "Server is shutting down.")))
+        return
+    end
     local session_id = nothing
+
+    # Registry the connection
+    lock(STATE_LOCK) do
+        push!(ACTIVE_WS, ws)
+    end
 
     try
         for msg in ws
@@ -183,144 +205,187 @@ end
             action = payload["action"]
 
             # START or RECONNECT logic
-            if action == "start" || action == "reconnect"
-                # Safely extract session_id, falling back to a new UUID if missing or explicitly null
-                if haskey(payload, "session_id") && payload["session_id"] !== nothing
-                    session_id = String(payload["session_id"])
-                    @info "Reconnected WebSocket for session: $session_id"
-                else
-                    session_id = string(uuid4())
-                    @info "New simulation started. Session ID: $session_id"
+            if action == "reconnect"
+                session_id = get(payload, "session_id", nothing)
+
+                # thread-safe control of the validity
+                is_valid = lock(STATE_LOCK) do
+                    !isnothing(session_id) && haskey(ACTIVE_TASKS, String(session_id))
                 end
+
+                # GATEKEEPER: Check if the simulation actually exists in the current server RAM
+                if !is_valid
+                    @warn "Ghost session detected. Rejecting reconnect for dead session: $session_id"
+                    HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                        "type" => "error",
+                        "message" => "Simulation session expired or server was restarted."
+                    )))
+                    return
+                end
+
+                session_id = String(session_id)
+                @info "Successfully reconnected WebSocket for active session: $session_id"
+
+                # Send the session ID back to the client
+                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "session_info", "session_id" => session_id)))
+
+            elseif action == "start"
+                session_id = string(uuid4())
+                @info "New simulation started. Session ID: $session_id"
 
                 # Send the session ID back to the client immediately
                 HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "session_info", "session_id" => session_id)))
 
-                if action == "start" && !haskey(ACTIVE_TASKS, session_id)
-                    # Create a channel with a buffer of 1000 messages
-                    SESSION_CHANNELS[session_id] = Channel{String}(1000)
+                # Create Channel and Spawn Producer Task
+                lock(STATE_LOCK) do
+                    if !haskey(ACTIVE_TASKS, session_id)
+                        # Create a channel with a buffer of 1000 messages
+                        SESSION_CHANNELS[session_id] = Channel{String}(1000)
 
-                    t = Threads.@spawn begin
-                        try
-                            # Non-blocking logger: pushes to channel, drops oldest if full
-                            log_cb = (info) -> begin
-                                if haskey(SESSION_CHANNELS, session_id)
-                                    ch = SESSION_CHANNELS[session_id]
-                                    if length(ch.data) >= ch.sz_max
-                                        take!(ch) # Prevent blocking the simulation
+                        t = Threads.@spawn begin
+                            try
+                                # Non-blocking logger: pushes to channel, drops oldest if full
+                                log_cb = (info) -> begin
+                                    ch = lock(STATE_LOCK) do
+                                        get(SESSION_CHANNELS, session_id, nothing)
                                     end
-                                    put!(ch, JSON3.write(info))
+
+                                    if !isnothing(ch) && isopen(ch)
+                                        if length(ch.data) >= ch.sz_max
+                                            take!(ch)
+                                        end
+                                        put!(ch, JSON3.write(info))
+                                    end
                                 end
-                            end
 
-                            log_cb(Dict("type" => "status", "stage" => "Configuration received..."))
+                                log_cb(Dict("type" => "status", "stage" => "Configuration received..."))
 
-                            fem_config, solver, eval_config = build_configs(payload["data"])
+                                fem_config, solver, eval_config = build_configs(payload["data"])
 
-                            data_hash, model_hash, eval_hash = run_pipeline(
-                                solver, fem_config, eval_config;
-                                log_cb=log_cb
-                            )
+                                data_hash, model_hash, eval_hash = run_pipeline(
+                                    solver, fem_config, eval_config;
+                                    log_cb=log_cb
+                                )
 
-                            solver_name = get_solver_name(solver)
-                            image_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).png")
+                                solver_name = get_solver_name(solver)
+                                image_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).png")
 
-                            if isfile(image_path)
-                                image_b64 = base64encode(read(image_path))
-                                image_url = "data:image/png;base64," * image_b64
-                            else
-                                error("Image not found on disk after generation")
-                            end
-
-                            log_cb(Dict(
-                                "type" => "success",
-                                "data_hash" => data_hash,
-                                "model_hash" => model_hash,
-                                "eval_hash" => eval_hash,
-                                "image_url" => image_url
-                            ))
-                        catch e
-                            if e isa InterruptException || (e isa TaskFailedException && occursin("InterruptException", string(e)))
-                                if haskey(SESSION_CHANNELS, session_id)
-                                    put!(SESSION_CHANNELS[session_id], JSON3.write(Dict("type" => "error", "message" => "Simulation interrupted by the user.")))
+                                if isfile(image_path)
+                                    image_b64 = base64encode(read(image_path))
+                                    image_url = "data:image/png;base64," * image_b64
+                                    log_cb(Dict(
+                                        "type" => "success",
+                                        "data_hash" => data_hash,
+                                        "model_hash" => model_hash,
+                                        "eval_hash" => eval_hash,
+                                        "image_url" => image_url
+                                    ))
+                                else
+                                    error("Image not found on disk after generation")
                                 end
-                            else
-                                @error "Simulation failed" exception=(e, catch_backtrace())
-                                if haskey(SESSION_CHANNELS, session_id)
-                                    put!(SESSION_CHANNELS[session_id], JSON3.write(Dict("type" => "error", "message" => sprint(showerror, e))))
+                            catch e
+                                if e isa InterruptException || (e isa TaskFailedException && occursin("InterruptException", string(e)))
+                                    # Notify the frontend that the thread stopped
+                                    lock(STATE_LOCK) do
+                                        if haskey(SESSION_CHANNELS, session_id)
+                                            put!(SESSION_CHANNELS[session_id], JSON3.write(Dict(
+                                                "type" => "error",
+                                                "message" => "Simulation interrupted by the user."
+                                            )))
+                                        end
+                                    end
+                                else
+                                    @error "Simulation failed" exception=(e, catch_backtrace())
+                                    lock(STATE_LOCK) do
+                                        if haskey(SESSION_CHANNELS, session_id)
+                                            put!(SESSION_CHANNELS[session_id], JSON3.write(Dict("type" => "error", "message" => sprint(showerror, e))))
+                                        end
+                                    end
                                 end
-                            end
-                        finally
-                            # Cleanup
-                            delete!(ACTIVE_TASKS, session_id)
-                            # Close the channel to automatically terminate the sender_task loop
-                            if haskey(SESSION_CHANNELS, session_id)
-                                close(SESSION_CHANNELS[session_id])
-                                delete!(SESSION_CHANNELS, session_id)
+                            finally
+                                # Cleanup
+                                lock(STATE_LOCK) do
+                                    delete!(ACTIVE_TASKS, session_id)
+                                    # Close the channel to automatically terminate the sender_task loop
+                                    if haskey(SESSION_CHANNELS, session_id)
+                                        close(SESSION_CHANNELS[session_id])
+                                        delete!(SESSION_CHANNELS, session_id)
+                                    end
+                                end
                             end
                         end
+                        ACTIVE_TASKS[session_id] = t
                     end
-                    ACTIVE_TASKS[session_id] = t
                 end
 
                 # Kill existing sender task for this socket if any
-                if haskey(SENDER_TASKS, session_id)
-                    old_sender = SENDER_TASKS[session_id]
-                    if !istaskdone(old_sender)
-                        try
-                            Base.throwto(old_sender, InterruptException())
-                        catch
-                            # Ignore errors when killing the old sender
-                        end
+                old_sender = lock(STATE_LOCK) do
+                    get(SENDER_TASKS, session_id, nothing)
+                end
+                if !isnothing(old_sender) && !istaskdone(old_sender)
+                    try
+                        Base.throwto(old_sender, InterruptException())
+                    catch
                     end
                 end
 
                 # Start the async Sender Task that streams from Channel to WebSocket
-                SENDER_TASKS[session_id] = Threads.@spawn begin
+                new_sender = Threads.@spawn begin
                     try
-                        if haskey(SESSION_CHANNELS, session_id)
-                            ch = SESSION_CHANNELS[session_id]
+                        ch = lock(STATE_LOCK) do
+                            get(SESSION_CHANNELS, session_id, nothing)
+                        end
+                        if !isnothing(ch)
                             for log_msg in ch
-                                if HTTP.WebSockets.isclosed(ws)
-                                    break
-                                end
+                                HTTP.WebSockets.isclosed(ws) && break
                                 HTTP.WebSockets.send(ws, log_msg)
                             end
                         end
                     catch
-                        # Ignore closed stream errors securely
                     end
                 end
 
-            elseif action == "stop"
-                if session_id !== nothing && haskey(ACTIVE_TASKS, session_id)
-                    @info "User requested abort for session: $session_id"
-                    t_abort = ACTIVE_TASKS[session_id]
+                lock(STATE_LOCK) do
+                    SENDER_TASKS[session_id] = new_sender
+                end
 
-                    Threads.@spawn begin
-                        if !istaskdone(t_abort)
-                            try
-                                Base.throwto(t_abort, InterruptException())
-                            catch err
-                                @warn "Graceful interruption failed: $err"
-                            end
-                        end
+            elseif action == "stop"
+                t_abort = lock(STATE_LOCK) do
+                    get(ACTIVE_TASKS, session_id, nothing)
+                end
+                if !isnothing(t_abort) && !istaskdone(t_abort)
+                    @info "User requested abort for session: $session_id"
+                    @async try
+                        Base.throwto(t_abort, InterruptException())
+                    catch
                     end
                 end
             end
         end
+    catch e
+        if e isa InterruptException
+            @info "WebSocket received Ctrl+C. Broadcasting shutdown event to all threads..."
+            notify(SHUTDOWN_EVENT)
+        elseif e isa EOFError || e isa Base.IOError
+            # WebSocket closed correctly
+        else
+            @error "WebSocket crash:" exception=(e, catch_backtrace())
+        end
     finally
-        # Only kill the sender task. Leave the simulation task running!
-        if session_id !== nothing && haskey(SENDER_TASKS, session_id)
-            s_task = SENDER_TASKS[session_id]
-            if !istaskdone(s_task)
-                try
-                    Base.throwto(s_task, InterruptException())
-                catch
-                    # Ignore cleanup errors
+        lock(STATE_LOCK) do
+            # Remove the connection from the registry
+            delete!(ACTIVE_WS, ws)
+
+            if session_id !== nothing && haskey(SENDER_TASKS, session_id)
+                s_task = SENDER_TASKS[session_id]
+                if !istaskdone(s_task)
+                    @async try
+                        Base.throwto(s_task, InterruptException())
+                    catch
+                    end
                 end
+                delete!(SENDER_TASKS, session_id)
             end
-            delete!(SENDER_TASKS, session_id)
         end
         @info "WebSocket disconnected for session: $(session_id !== nothing ? session_id : "unknown")"
     end
@@ -898,10 +963,111 @@ println("📡 Listening for React Dashboard on: http://127.0.0.1:8080")
 println("🔌 WebSocket Engine on: ws://127.0.0.1:8080/ws/simulate")
 println("===================================================================\n")
 
+# Disable the low-level C hard-crash on Ctrl+C.
+# This forces Julia to throw a catchable InterruptException instead.
+Base.exit_on_sigint(false)
+
+
 # Attach the CORS middleware and start serving
 serve(
     host="127.0.0.1",
     port=8080,
     middleware=[cors_middleware],
-    access_log=nothing
+    access_log=nothing,
+    async=true
 )
+
+try
+    while !IS_SHUTTING_DOWN[]
+        sleep(0.1)
+    end
+catch e
+    if e isa InterruptException
+        @info "Main thread caught Ctrl+C. Triggering graceful shutdown..."
+        Threads.atomic_xchg!(IS_SHUTTING_DOWN, true)
+    else
+        @error "Fatal server error:" exception=(e, catch_backtrace())
+        exit(1)
+    end
+end
+
+# ===================================================================
+# GRACEFUL TEARDOWN SEQUENCE
+# ===================================================================
+println("\n")
+@info "🛑 Shutdown sequence initiated..."
+
+# Activate system signals again (second Ctrl+C kill the process immediately)
+Base.exit_on_sigint(true)
+
+# Collect the server state snapshot (thread-safe)
+active_ws_list, active_sims, active_senders, channels = lock(STATE_LOCK) do
+    (
+        collect(ACTIVE_WS),
+        collect(values(ACTIVE_TASKS)),
+        collect(values(SENDER_TASKS)),
+        collect(values(SESSION_CHANNELS))
+    )
+end
+
+# Notify the frontend and close the WebSockets
+if !isempty(active_ws_list)
+    @info "Notifying $(length(active_ws_list)) active WebSocket clients of impending shutdown..."
+
+    # Payload for the frontend
+    shutdown_msg = JSON3.write(Dict(
+        "type" => "error",
+        "message" => "Server disconnected for restart or maintenance."
+    ))
+
+    for ws in active_ws_list
+        try
+            # Notify the frontend
+            HTTP.WebSockets.send(ws, shutdown_msg)
+
+            # Give the TCP a small time to flush the package before closing the connection
+            sleep(0.05)
+            close(ws)
+        catch
+            # Ignore errors if the client is disconnected
+        end
+    end
+end
+
+# Interrupt the simulations and the threads
+if !isempty(channels)
+    @info "Closing message queues..."
+    for ch in channels
+        try
+            close(ch)
+        catch
+        end
+    end
+end
+
+if !isempty(active_senders)
+    for task in active_senders
+        if !istaskdone(task)
+            @async try
+                Base.throwto(task, InterruptException())
+            catch
+            end
+        end
+    end
+end
+
+if !isempty(active_sims)
+    @info "Sending interrupt to active simulations..."
+    for task in active_sims
+        if !istaskdone(task)
+            @async try
+                Base.throwto(task, InterruptException())
+            catch
+            end
+        end
+    end
+end
+
+# Close
+@info "✅ Clean shutdown complete. Releasing OS ports..."
+exit(0)

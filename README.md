@@ -71,6 +71,32 @@ The architecture is modular and designed for interactive experimentation directl
    julia> run_pipeline(solver, fem_setup, eval_setup)
    ```
 
+### Optimization & Production Deployment
+
+To ensure maximum performance and zero-overhead startup, this project supports the creation of a custom Julia system image. This is highly recommended for frequent experimentation.
+
+#### Building the System Image
+The build process compiles heavy dependencies (`Gridap`, `Lux`, `Reactant`, `CairoMakie`, etc.) into a pre-linked binary.
+
+```bash
+# Execute the build script from the root folder
+julia --project=. scripts/build_sysimage.jl
+```
+
+#### Starting the Server
+
+Once the system image is built, the server will automatically detect and use it for a high-performance boot.
+
+**Linux:**
+```bash
+./start.sh
+```
+
+**Windows:**
+```bash
+start.bat
+```
+
 ### CLI Execution
 For automated benchmarking or cluster deployment, the scripts can be executed directly from the terminal. This exposes a simplified interface for the core parameters:
 
@@ -104,10 +130,16 @@ This project includes a React web dashboard to orchestrate experiments and visua
    ```
 
 ### Features available via the UI:
-* **Interactive Parameter Tuning:** Configure `FEMConfig`, `DeepONetSolver`, or `FNOSolver` using visual controls.
+* **Interactive Parameter Tuning:** Configure `FEMConfig`, `DeepONetSolver`, `FNOSolver`, or `NOMADSolver` using visual controls.
 * **Live WebSocket Streaming:** Watch the loss function drop and see the predicted traveling waves update frame-by-frame during the training loop.
 * **Zero-Shot Error Analysis:** Instantly plot the absolute error between Gridap's FEM high-fidelity solution and the Neural Operator's response on unseen $\sigma$ values.
+* **Cloud Sync & Fine-Tuning:** Download shared experiments from the global Firebase gallery to your local DrWatson workspace, and use existing model weights (`pretrained_model_hash`) as a starting point for fine-tuning new architectures.
 
+### Full-Stack Development
+If you are actively developing both the Julia backend and the React frontend, use the unified development launcher. It automatically utilizes the custom sysimage if available:
+```bash
+./dev.sh
+```
 
 ## Public Deployment & GitHub Pages Workflow
 
@@ -125,7 +157,7 @@ To synchronize the public repository and trigger a GitHub Pages update without a
 git branch -D extract-scripts-branch
 
 # 2. Extract the subfolder into a clean, isolated branch
-git subtree split --prefix=experiments_NeuralOperators -b extract-scripts-branch
+git subtree split --prefix=experiments_NeuralOperators main -b extract-scripts-branch
 
 # 3. Force push the isolated branch to the public remote repository
 git push public-origin extract-scripts-branch:main --force
@@ -152,32 +184,57 @@ All parameters are structurally defined in `src/Solvers.jl` along with their def
 | `t0`, `dt`, `tf` | `0.0`, `0.01`, `1.0` | Initial time, time step, and final simulation time. |
 | `c`, `theta` | `1.0`, `0.5` | Advection velocity and Theta-method integration parameter. |
 
-### `DeepONetSolver`: DeepONet Hyperparameters
+
+### `DeepONetSolver` & `NOMADSolver` Hyperparameters
+
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| `epochs` | `20000` / `10000` | Total number of training epochs. |
+| `batch_size` | `0` / `2048` | `0` for Full Batch, otherwise mini-batch size. |
+| `step_x`, `step_t` | `10`, `5` | Spatial/Temporal subsampling factors. |
+| `m_sensors` | `100` / `200` | Input sensors (Branch Net). |
+| `p_latent`, `hidden`| `64`, `64` | Latent space dim and hidden neurons. |
+| `pretrained_model_hash`| `""` | Hash of a previously trained model for fine-tuning. |
+
+### `FNOSolver` Hyperparameters
 
 | Parameter | Default | Description |
 | :--- | :--- | :--- |
 | `epochs` | `20000` | Total number of training epochs. |
-| `step_x`, `step_t` | `10`, `5` | Spatial and temporal subsampling factors. |
-| `lr_scheduler` | `CosineAnnealing()` | Learning rate scheduler instance. |
-| `m_sensors` | `100` | Number of input sensors for the Branch Net. |
-| `p_latent`, `hidden`| `64`, `64` | Latent space dimension and neurons per hidden layer. |
-
-### `FNOSolver`: FNO Hyperparameters
-
-| Parameter | Default | Description |
-| :--- | :--- | :--- |
-| `epochs` | `20000` | Total number of training epochs. |
-| `nx_red` | `256` | Spatial nodes extracted for FFT. *Note: Use powers of 2 for optimal FFT performance.* |
-| `nt_red` | `50` | Number of temporal steps to predict (output channels). |
-| `lr_scheduler` | `CosineAnnealing()` | Learning rate scheduler instance. |
-| `hidden_channels`| `(64, 64, 128)` | Tuple defining channel widths of hidden Fourier layers. |
-| `modes` | `(32,)` | Tuple of Fourier modes to retain per spatial dimension. |
+| `batch_size` | `32` | Size of mini-batches for training. |
+| `nx_red`, `nt_red` | `256`, `50` | Spatial nodes/Temporal steps. |
+| `hidden_channels`| `(64, 64, 128)` | Fourier layer channel widths. |
+| `modes` | `(32,)` | Fourier modes retained per dimension. |
+| `pretrained_model_hash`| `""` | Hash of a previously trained model for fine-tuning. |
 
 ### `EvalConfig`: Evaluation Parameters
 
 | Parameter | Default | Description |
 | :--- | :--- | :--- |
 | `sigma_test` | `0.03` | Unseen physical parameter used strictly for Zero-Shot evaluation. |
+
+### Learning Rate Schedulers
+
+All models accept an `lr_scheduler` parameter (defaulting to `CosineAnnealing()`). You can configure the specific behavior of the scheduler by passing the instantiated object.
+
+#### `CosineAnnealing`
+Decreases the learning rate following a half-cosine wave from a maximum to a minimum value.
+
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| `lr_max` | `0.001f0` | Maximum (initial) learning rate. |
+| `lr_min` | `1e-6f0` | Minimum (final) learning rate. |
+| `max_epochs` | `20000` | Total epochs for the decay (typically inherits the solver's `epochs`). |
+
+#### `ReduceLROnPlateau`
+Dynamically reduces the learning rate by a `factor` when the loss stops improving.
+
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| `start_lr` | `0.001f0` | Initial learning rate. |
+| `min_lr` | `1e-6f0` | Lower bound for the learning rate. |
+| `patience` | `100` | Number of epochs to wait with no loss improvement before reducing. |
+| `factor` | `0.5f0` | Multiplicative factor for the learning rate decay. |
 
 ---
 *Note: Data and Model hashes are securely managed and cached in `data/registry.json`. Computations are automatically bypassed if a matching configuration hash is detected.*

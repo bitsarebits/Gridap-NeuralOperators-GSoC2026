@@ -20,8 +20,14 @@ cleanup() {
 # Bind the cleanup function to the signals
 trap cleanup INT TERM ERR EXIT
 
+JULIA_CMD="julia"
+if [ -f "sys_gridaproms.so" ]; then
+    echo "📦 Custom sysimage detected. Booting with extreme speed..."
+    JULIA_CMD="julia --sysimage=sys_gridaproms.so"
+fi
+
 echo "🚀 [1/2] Starting Julia API Server on port 8080..."
-julia scripts/server_dashboard.jl &
+$JULIA_CMD scripts/server_dashboard.jl &
 
 echo "🎨 [2/2] Starting React Vite Server on port 5173..."
 cd dashboard && npm run dev &
