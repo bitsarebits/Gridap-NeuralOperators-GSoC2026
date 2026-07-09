@@ -421,5 +421,5 @@ firebase-auth.json
 # Firebase local cache
 .firebase/
 
-# sysimage
+# sys images
 sysimages/

@@ -82,11 +82,12 @@ function train_deeponet!(
 
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
-            # Yield allows Julia to catch InterruptException thrown by the WebSocket
-            yield()
             local current_loss = 0.0f0
 
             for (f_batch, u_batch) in dataloader
+                # Yield allows Julia to catch InterruptException thrown by the WebSocket
+                yield()
+
                 # The trunk input (x_data_dev) remains constant across parameter batches
                 batch_dev = ((f_batch |> XDEV, x_data_dev), u_batch |> XDEV)
 
@@ -162,12 +163,13 @@ function train_fno!(
 
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
-            # Yield allows Julia to catch InterruptException thrown by the WebSocket
-            yield()
             local current_loss = 0.0f0
 
             # Iterate over the batches in the dataloader
             for batch in dataloader
+                # Yield allows Julia to catch InterruptException thrown by the WebSocket
+                yield()
+
                 # Move the mini-batch to the XLA device
                 batch_dev = batch |> XDEV
 
@@ -244,10 +246,12 @@ function train_nomad!(
 
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
-            yield()
             local current_loss = 0.0f0
 
             for batch in dataloader
+                # Yield allows Julia to catch InterruptException thrown by the WebSocket
+                yield()
+
                 batch_dev = (
                     (batch[1][1] |> XDEV, batch[1][2] |> XDEV),
                     batch[2] |> XDEV
