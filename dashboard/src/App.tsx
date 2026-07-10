@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LayoutDashboard, Database } from "lucide-react";
+import { LayoutDashboard, Database, BookOpen } from "lucide-react";
 import gridapLogo from "./assets/logo-gridap.png";
 
 // Custom Hooks
@@ -9,6 +9,7 @@ import { useServerPing } from "./hooks/useServerPing";
 import ServerConnectionScreen from "./components/ui/ServerConnectionScreen";
 import OrchestratorView from "./views/OrchestratorView";
 import RegistryCatalog from "./views/RegistryCatalog";
+import DocsView from "./views/DocsView";
 import { defaultValues, type SimulationFormValues } from "./schemas/simulation";
 
 // Helper to map backend nested configurations back to the flat React Hook Form state
@@ -75,7 +76,7 @@ const mapRegistryToFormValues = (
         hidden_channels: hiddenChannelsString,
         modes: modesString,
 
-        // Eval (Fallback to default since we are loading a model, not a specific eval)
+        // Eval
         sigma_test: defaultValues.sigma_test,
 
         // Schedulers
@@ -91,9 +92,9 @@ const mapRegistryToFormValues = (
 
 function App() {
     // State
-    const [currentView, setCurrentView] = useState<"orchestrator" | "catalog">(
-        "orchestrator",
-    );
+    const [currentView, setCurrentView] = useState<
+        "orchestrator" | "catalog" | "docs"
+    >("orchestrator");
     const [fineTuneData, setFineTuneData] = useState<
         SimulationFormValues | undefined
     >(undefined);
@@ -138,6 +139,18 @@ function App() {
                     <div className="flex gap-2">
                         <button
                             type="button"
+                            onClick={() => setCurrentView("docs")}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold transition-colors cursor-pointer text-sm ${
+                                currentView === "docs"
+                                    ? "bg-slate-100 text-slate-900"
+                                    : "text-slate-500 hover:text-slate-800"
+                            }`}
+                        >
+                            <BookOpen size={18} />
+                            Docs
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => setCurrentView("orchestrator")}
                             className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold transition-colors cursor-pointer text-sm ${
                                 currentView === "orchestrator"
@@ -166,21 +179,24 @@ function App() {
 
             {/* Dynamic View Router Outlet */}
             <main className="w-full max-w-7xl px-4 py-8 flex justify-center">
-                {currentView === "orchestrator" ? (
-                    serverStatus === "connected" ? (
+                {currentView === "orchestrator" &&
+                    (serverStatus === "connected" ? (
                         <OrchestratorView
                             serverStatus={serverStatus}
                             initialFormValues={fineTuneData}
                         />
                     ) : (
                         <ServerConnectionScreen status={serverStatus} />
-                    )
-                ) : (
+                    ))}
+
+                {currentView === "catalog" && (
                     <RegistryCatalog
                         serverIsConnected={serverStatus === "connected"}
                         onFineTune={handleFineTuneRequest}
                     />
                 )}
+
+                {currentView === "docs" && <DocsView />}
             </main>
         </div>
     );

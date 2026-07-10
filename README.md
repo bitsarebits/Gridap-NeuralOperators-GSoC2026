@@ -238,3 +238,10 @@ Dynamically reduces the learning rate by a `factor` when the loss stops improvin
 
 ---
 *Note: Data and Model hashes are securely managed and cached in `data/registry.json`. Computations are automatically bypassed if a matching configuration hash is detected.*
+
+## Acknowledgments
+
+This project was developed as an open-source contribution for the **[Google Summer of Code (GSoC) 2026](https://summerofcode.withgoogle.com/)** program, participating under the **[NumFOCUS](https://numfocus.org/)** umbrella for the **[Gridap](https://gridap.github.io/Gridap.jl/stable/)** organization. 
+
+---
+<sub>*"Google Summer of Code" and "GSoC" are trademarks of Google. NumFOCUS is a trademark of NumFOCUS. This project is an independent open-source contribution and is not officially endorsed by or affiliated with Google or NumFOCUS.*</sub>
