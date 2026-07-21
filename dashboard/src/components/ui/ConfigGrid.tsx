@@ -86,7 +86,11 @@ const EXPLICIT_NAMES: Record<string, ReactNode> = {
             </MathSym>
         </>
     ),
-    order: <>FEM Order</>,
+    order: (
+        <>
+            FEM Order <MathSym>p</MathSym>
+        </>
+    ),
     c: (
         <>
             Wave Speed <MathSym>c</MathSym>

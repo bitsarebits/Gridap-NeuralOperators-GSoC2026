@@ -48,8 +48,8 @@ export default function ModelConfig({ isLoading }: Props) {
                     </h2>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
+                <div className="grid grid-cols-5 gap-4 mb-4">
+                    <div className="col-span-3">
                         <label className="block text-xs font-bold text-blue-800 uppercase tracking-wide">
                             Model Type
                         </label>
@@ -65,7 +65,7 @@ export default function ModelConfig({ isLoading }: Props) {
                             <option value="NOMAD">NOMAD</option>
                         </select>
                     </div>
-                    <div>
+                    <div className="col-span-2">
                         <label className="block text-xs font-bold text-blue-800 uppercase tracking-wide">
                             Epochs
                         </label>

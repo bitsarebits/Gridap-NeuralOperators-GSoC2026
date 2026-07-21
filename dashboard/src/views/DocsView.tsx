@@ -107,7 +107,15 @@ export default function DocsView() {
                             >
                                 NeuralOperators.jl
                             </a>{" "}
-                            and <span className="font-semibold">Lux.jl</span>{" "}
+                            and
+                            <a
+                                href="https://github.com/LuxDL/Lux.jl"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-blue-600 hover:underline"
+                            >
+                                Lux.jl
+                            </a>{" "}
                             ecosystem.
                         </li>
                         <li>
@@ -168,10 +176,8 @@ export default function DocsView() {
                     <strong>Why this specific problem?</strong> As Quarteroni
                     notes, when the variance σ becomes very small, the
                     eigenvalues of the correlation matrix show almost no decay.
-                    Standard linear Reduced Order Models (ROMs) struggle heavily
-                    in this scenario. Neural Operators are employed here to
-                    bypass this limitation and build nonlinear surrogates
-                    capable of retaining accuracy.
+                    Standard linear Reduced Order Models (ROMs) struggle in this
+                    scenario.
                 </div>
             </Accordion>
 
@@ -209,7 +215,7 @@ export default function DocsView() {
                     </li>
                     <li>
                         <strong>dt / tf:</strong> Time step size and final
-                        simulation time.
+                        simulation time. The initial time is 0.0.
                     </li>
                     <li>
                         <strong>c:</strong> Advection velocity of the traveling
@@ -296,9 +302,9 @@ Coords (x, t) ───[ Trunk Net  ]────> t (p_latent) ──╯`}
                 </h4>
                 <ul className="space-y-2 text-sm">
                     <li>
-                        <strong>batch_size:</strong> Defaults to 0 (Full Batch).
-                        Because the physical grid is static, batching over the
-                        initial parameters has minimal memory overhead.
+                        <strong>batch_size:</strong> Defines the number of
+                        parameter scenarios processed at once. Defaults to 0
+                        (Full Batch).
                     </li>
                     <li>
                         <strong>step_x / step_t:</strong> Subsampling factors
