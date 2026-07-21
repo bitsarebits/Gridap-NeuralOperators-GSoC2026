@@ -58,9 +58,9 @@ export default function DocsView() {
                     <strong className="block text-slate-800 mb-1">
                         References & Credits
                     </strong>
-                    <ul className="list-none space-y-2">
+                    <ul className="list-disc pl-5 space-y-2 marker:text-slate-400">
                         <li>
-                            • Developed as part of the{" "}
+                            Developed as part of the{" "}
                             <a
                                 href="https://summerofcode.withgoogle.com/"
                                 target="_blank"
@@ -90,15 +90,23 @@ export default function DocsView() {
                             organization.
                         </li>
                         <li>
-                            • The physical problem is based on{" "}
-                            <em>
-                                "Reduced Basis Methods for Partial Differential
-                                Equations"
-                            </em>{" "}
-                            by A. Quarteroni.
+                            The physical problem is based on{" "}
+                            <a
+                                href="https://doi.org/10.1007/978-3-319-15431-2"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-blue-600 hover:underline font-semibold"
+                            >
+                                <em>
+                                    "Reduced Basis Methods for Partial
+                                    Differential Equations: An Introduction"
+                                </em>
+                            </a>{" "}
+                            by A. Quarteroni, A. Manzoni, and F. Negri
+                            (Springer, 2015).
                         </li>
                         <li>
-                            • Model architectural concepts are powered by the{" "}
+                            Model architectural concepts are powered by the{" "}
                             <a
                                 href="https://docs.sciml.ai/NeuralOperators/stable/"
                                 target="_blank"
@@ -107,7 +115,7 @@ export default function DocsView() {
                             >
                                 NeuralOperators.jl
                             </a>{" "}
-                            and
+                            and{" "}
                             <a
                                 href="https://github.com/LuxDL/Lux.jl"
                                 target="_blank"
@@ -119,7 +127,7 @@ export default function DocsView() {
                             ecosystem.
                         </li>
                         <li>
-                            • High-Fidelity snapshots are generated via{" "}
+                            High-Fidelity snapshots are generated via{" "}
                             <a
                                 href="https://github.com/gridap/Gridap.jl"
                                 target="_blank"

@@ -1,6 +1,7 @@
 # Neural Operators Experiments
 
 [![Live Dashboard](https://img.shields.io/badge/Live_Dashboard-GitHub_Pages-blue?style=for-the-badge&logo=github)](https://bitsarebits.github.io/Gridap-NeuralOperators-GSoC2026/)
+[![GSoC Devlog](https://img.shields.io/badge/Read-GSoC_Devlog-2ea44f?style=for-the-badge&logo=markdown)](https://bitsarebits.github.io/gsoc2026-gridap/)
 
 This subfolder contains the Julia scripts designed to test the integration between `NeuralOperators.jl` and `GridapROMs.jl`. The workflow covers High-Fidelity FEM data generation, model training (with `Lux.jl` and `Enzyme.jl` for AD), and zero-shot evaluation. 
 
@@ -239,9 +240,11 @@ Dynamically reduces the learning rate by a `factor` when the loss stops improvin
 ---
 *Note: Data and Model hashes are securely managed and cached in `data/registry.json`. Computations are automatically bypassed if a matching configuration hash is detected.*
 
-## Acknowledgments
+### Acknowledgments & AI Disclaimer
 
 This project was developed as an open-source contribution for the **[Google Summer of Code (GSoC) 2026](https://summerofcode.withgoogle.com/)** program, participating under the **[NumFOCUS](https://numfocus.org/)** umbrella for the **[Gridap](https://gridap.github.io/Gridap.jl/stable/)** organization. 
+
+**AI Usage:** *To accelerate the development of the non-core aspects of this project, I used Google Gemini as a conversational assistant. It helped scaffold the React dashboard UI, set up the basic server boilerplate, and refine the English documentation. **No autonomous coding agents were used.** All mathematical implementations, Julia workflows (`Gridap`, `DrWatson`, `Lux`), and architectural decisions were designed and written entirely by me.*
 
 ---
 <sub>*"Google Summer of Code" and "GSoC" are trademarks of Google. NumFOCUS is a trademark of NumFOCUS. This project is an independent open-source contribution and is not officially endorsed by or affiliated with Google or NumFOCUS.*</sub>
