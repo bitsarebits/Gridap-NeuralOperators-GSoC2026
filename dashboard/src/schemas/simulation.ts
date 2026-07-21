@@ -44,59 +44,67 @@ export const defaultValues = {
     pretrained_model_hash: "",
 };
 
+// Base number schema with a global required message to satisfy TS type signatures
+const reqNum = z.number({ message: "Required" });
+
 const baseSchema = z.object({
     // FEMConfig
-    beta_start: z.number().min(0),
-    beta_end: z.number().min(0),
-    beta_step: z.number().positive(),
-    order: z.number().int().min(1).max(5),
-    L: z.number().positive(),
-    nx: z.number().int().positive(),
-    t0: z.number().min(0),
-    dt: z.number().positive(),
-    tf: z.number().positive(),
-    c: z.number(),
-    theta: z.number().min(0).max(1),
+    beta_start: reqNum.min(0, "Must be ≥ 0"),
+    beta_end: reqNum.min(0, "Must be ≥ 0"),
+    beta_step: reqNum.positive("Must be > 0"),
+    order: reqNum
+        .int("Must be an integer")
+        .min(1, "Min order 1")
+        .max(5, "Max order 5"),
+    L: reqNum.positive("Must be > 0"),
+    nx: reqNum.int("Must be an integer").positive("Must be > 0"),
+    t0: reqNum.min(0, "Must be ≥ 0"),
+    dt: reqNum.positive("Must be > 0"),
+    tf: reqNum.positive("Must be > 0"),
+    c: reqNum,
+    theta: reqNum.min(0, "Must be ≥ 0").max(1, "Must be ≤ 1"),
 
     // Training
-    epochs: z.number().int().positive(),
+    epochs: reqNum.int("Must be an integer").positive("Must be > 0"),
 
     // EvalConfig
-    sigma_test: z.number().positive(),
+    sigma_test: reqNum.positive("Must be > 0"),
 });
 
 // DeepONet
 const deepONetSchema = z.object({
     model_type: z.literal("DeepONet"),
-    batch_size: z.number().int().min(0),
-    step_x: z.number().int().positive(),
-    step_t: z.number().int().positive(),
-    m_sensors: z.number().int().positive(),
-    p_latent: z.number().int().positive(),
-    hidden: z.number().int().positive(),
+    batch_size: reqNum.int("Must be an integer").min(0, "Must be ≥ 0"),
+    step_x: reqNum.int("Must be an integer").positive("Must be > 0"),
+    step_t: reqNum.int("Must be an integer").positive("Must be > 0"),
+    m_sensors: reqNum.int("Must be an integer").positive("Must be > 0"),
+    p_latent: reqNum.int("Must be an integer").positive("Must be > 0"),
+    hidden: reqNum.int("Must be an integer").positive("Must be > 0"),
     pretrained_model_hash: z.string(),
 });
 
 // FNO
 const fnoSchema = z.object({
     model_type: z.literal("FNO"),
-    batch_size: z.number().int().min(0),
-    nx_red: z.number().int().positive(),
-    nt_red: z.number().int().positive(),
-    hidden_channels: z.string().regex(/^[0-9]+(,\s*[0-9]+)*$/), // Validate the format "64, 64, 128"
-    modes: z.string(),
+    batch_size: reqNum.int("Must be an integer").min(0, "Must be ≥ 0"),
+    nx_red: reqNum.int("Must be an integer").positive("Must be > 0"),
+    nt_red: reqNum.int("Must be an integer").positive("Must be > 0"),
+    hidden_channels: z
+        .string()
+        .regex(/^[0-9]+(,\s*[0-9]+)*$/, "Format: e.g. 64, 64, 128"),
+    modes: z.string().min(1, "Required"),
     pretrained_model_hash: z.string(),
 });
 
 // NOMAD
 const nomadSchema = z.object({
     model_type: z.literal("NOMAD"),
-    batch_size: z.number().int().min(0),
-    step_x: z.number().int().positive(),
-    step_t: z.number().int().positive(),
-    m_sensors: z.number().int().positive(),
-    p_latent: z.number().int().positive(),
-    hidden: z.number().int().positive(),
+    batch_size: reqNum.int("Must be an integer").min(0, "Must be ≥ 0"),
+    step_x: reqNum.int("Must be an integer").positive("Must be > 0"),
+    step_t: reqNum.int("Must be an integer").positive("Must be > 0"),
+    m_sensors: reqNum.int("Must be an integer").positive("Must be > 0"),
+    p_latent: reqNum.int("Must be an integer").positive("Must be > 0"),
+    hidden: reqNum.int("Must be an integer").positive("Must be > 0"),
     pretrained_model_hash: z.string(),
 });
 
@@ -109,16 +117,16 @@ const modelUnion = z.discriminatedUnion("model_type", [
 // Schedulers
 const cosineSchema = z.object({
     lr_scheduler_type: z.literal("CosineAnnealing"),
-    ca_lr_max: z.number().positive(),
-    ca_lr_min: z.number().positive(),
+    ca_lr_max: reqNum.positive("Must be > 0"),
+    ca_lr_min: reqNum.positive("Must be > 0"),
 });
 
 const plateauSchema = z.object({
     lr_scheduler_type: z.literal("ReduceLROnPlateau"),
-    rop_patience: z.number().int().positive(),
-    rop_factor: z.number().positive().max(1),
-    rop_min_lr: z.number().positive(),
-    rop_start_lr: z.number().positive(),
+    rop_patience: reqNum.int("Must be an integer").positive("Must be > 0"),
+    rop_factor: reqNum.positive("Must be > 0").max(1, "Must be ≤ 1"),
+    rop_min_lr: reqNum.positive("Must be > 0"),
+    rop_start_lr: reqNum.positive("Must be > 0"),
 });
 
 const schedulerUnion = z.discriminatedUnion("lr_scheduler_type", [

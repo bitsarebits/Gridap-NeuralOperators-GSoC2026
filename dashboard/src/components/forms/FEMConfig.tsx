@@ -7,7 +7,10 @@ interface Props {
 }
 
 export default function FEMConfig({ isLoading }: Props) {
-    const { register } = useFormContext<SimulationFormValues>();
+    const {
+        register,
+        formState: { errors },
+    } = useFormContext<SimulationFormValues>();
 
     return (
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 h-full">
@@ -29,13 +32,18 @@ export default function FEMConfig({ isLoading }: Props) {
                             </label>
                             <input
                                 type="number"
-                                step="0.1"
+                                step="any"
                                 disabled={isLoading}
                                 {...register("beta_start", {
                                     valueAsNumber: true,
                                 })}
-                                className="mt-1 w-full p-2 text-sm border rounded bg-slate-50 disabled:opacity-50"
+                                className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.beta_start ? "bg-red-50 border-red-400" : "bg-slate-50 border-slate-200"}`}
                             />
+                            {errors.beta_start && (
+                                <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                    {errors.beta_start.message}
+                                </p>
+                            )}
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-slate-700">
@@ -43,13 +51,18 @@ export default function FEMConfig({ isLoading }: Props) {
                             </label>
                             <input
                                 type="number"
-                                step="0.1"
+                                step="any"
                                 disabled={isLoading}
                                 {...register("beta_end", {
                                     valueAsNumber: true,
                                 })}
-                                className="mt-1 w-full p-2 text-sm border rounded bg-slate-50 disabled:opacity-50"
+                                className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.beta_end ? "bg-red-50 border-red-400" : "bg-slate-50 border-slate-200"}`}
                             />
+                            {errors.beta_end && (
+                                <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                    {errors.beta_end.message}
+                                </p>
+                            )}
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-slate-700">
@@ -57,13 +70,18 @@ export default function FEMConfig({ isLoading }: Props) {
                             </label>
                             <input
                                 type="number"
-                                step="0.1"
+                                step="any"
                                 disabled={isLoading}
                                 {...register("beta_step", {
                                     valueAsNumber: true,
                                 })}
-                                className="mt-1 w-full p-2 text-sm border rounded bg-slate-50 disabled:opacity-50"
+                                className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.beta_step ? "bg-red-50 border-red-400" : "bg-slate-50 border-slate-200"}`}
                             />
+                            {errors.beta_step && (
+                                <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                    {errors.beta_step.message}
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -75,11 +93,16 @@ export default function FEMConfig({ isLoading }: Props) {
                     </label>
                     <input
                         type="number"
-                        step="0.1"
+                        step="any"
                         disabled={isLoading}
                         {...register("L", { valueAsNumber: true })}
-                        className="mt-1 w-full p-2 text-sm border rounded disabled:opacity-50"
+                        className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.L ? "bg-red-50 border-red-400" : "bg-white border-slate-200"}`}
                     />
+                    {errors.L && (
+                        <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                            {errors.L.message}
+                        </p>
+                    )}
                 </div>
                 <div>
                     <label className="block text-xs font-medium text-slate-700">
@@ -89,8 +112,13 @@ export default function FEMConfig({ isLoading }: Props) {
                         type="number"
                         disabled={isLoading}
                         {...register("nx", { valueAsNumber: true })}
-                        className="mt-1 w-full p-2 text-sm border rounded disabled:opacity-50"
+                        className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.nx ? "bg-red-50 border-red-400" : "bg-white border-slate-200"}`}
                     />
+                    {errors.nx && (
+                        <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                            {errors.nx.message}
+                        </p>
+                    )}
                 </div>
                 <div>
                     <label className="block text-xs font-medium text-slate-700">
@@ -100,8 +128,13 @@ export default function FEMConfig({ isLoading }: Props) {
                         type="number"
                         disabled={isLoading}
                         {...register("order", { valueAsNumber: true })}
-                        className="mt-1 w-full p-2 text-sm border rounded disabled:opacity-50"
+                        className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.order ? "bg-red-50 border-red-400" : "bg-white border-slate-200"}`}
                     />
+                    {errors.order && (
+                        <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                            {errors.order.message}
+                        </p>
+                    )}
                 </div>
                 <div>
                     <label className="block text-xs font-medium text-slate-700">
@@ -109,11 +142,16 @@ export default function FEMConfig({ isLoading }: Props) {
                     </label>
                     <input
                         type="number"
-                        step="0.1"
+                        step="any"
                         disabled={isLoading}
                         {...register("c", { valueAsNumber: true })}
-                        className="mt-1 w-full p-2 text-sm border rounded disabled:opacity-50"
+                        className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.c ? "bg-red-50 border-red-400" : "bg-white border-slate-200"}`}
                     />
+                    {errors.c && (
+                        <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                            {errors.c.message}
+                        </p>
+                    )}
                 </div>
                 <div>
                     <label className="block text-xs font-medium text-slate-700">
@@ -121,11 +159,16 @@ export default function FEMConfig({ isLoading }: Props) {
                     </label>
                     <input
                         type="number"
-                        step="0.01"
+                        step="any"
                         disabled={isLoading}
                         {...register("dt", { valueAsNumber: true })}
-                        className="mt-1 w-full p-2 text-sm border rounded disabled:opacity-50"
+                        className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.dt ? "bg-red-50 border-red-400" : "bg-white border-slate-200"}`}
                     />
+                    {errors.dt && (
+                        <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                            {errors.dt.message}
+                        </p>
+                    )}
                 </div>
                 <div>
                     <label className="block text-xs font-medium text-slate-700">
@@ -133,11 +176,16 @@ export default function FEMConfig({ isLoading }: Props) {
                     </label>
                     <input
                         type="number"
-                        step="0.1"
+                        step="any"
                         disabled={isLoading}
                         {...register("tf", { valueAsNumber: true })}
-                        className="mt-1 w-full p-2 text-sm border rounded disabled:opacity-50"
+                        className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.tf ? "bg-red-50 border-red-400" : "bg-white border-slate-200"}`}
                     />
+                    {errors.tf && (
+                        <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                            {errors.tf.message}
+                        </p>
+                    )}
                 </div>
             </div>
         </div>

@@ -8,9 +8,12 @@ interface Props {
 }
 
 export default function ModelConfig({ isLoading }: Props) {
-    // get also watch for the conditional logic
-    const { register, watch, setValue } =
+    const { register, watch, setValue, formState } =
         useFormContext<SimulationFormValues>();
+
+    // Type-casting the errors object to bypass TypeScript's strict checks on discriminated union keys.
+    // This allows us to safely read conditional fields like 'step_x' or 'nx_red' in the JSX.
+    const errors = formState.errors as Record<string, any>;
 
     const selectedModel = watch("model_type");
     const selectedScheduler = watch("lr_scheduler_type");
@@ -73,8 +76,13 @@ export default function ModelConfig({ isLoading }: Props) {
                             type="number"
                             disabled={disableAll}
                             {...register("epochs", { valueAsNumber: true })}
-                            className="mt-1 w-full p-2 text-sm border border-blue-300 rounded bg-white disabled:opacity-50"
+                            className={`mt-1 w-full p-2 text-sm border rounded bg-white disabled:opacity-50 ${errors.epochs ? "border-red-500 bg-red-50" : "border-blue-300"}`}
                         />
+                        {errors.epochs && (
+                            <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                {errors.epochs.message}
+                            </p>
+                        )}
                     </div>
                 </div>
 
@@ -119,8 +127,13 @@ export default function ModelConfig({ isLoading }: Props) {
                         type="number"
                         disabled={disableAll}
                         {...register("batch_size", { valueAsNumber: true })}
-                        className="mt-1 w-full p-2 text-sm border border-slate-300 rounded disabled:opacity-50"
+                        className={`mt-1 w-full p-2 text-sm border rounded disabled:opacity-50 ${errors.batch_size ? "border-red-500 bg-red-50" : "border-slate-300"}`}
                     />
+                    {errors.batch_size && (
+                        <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                            {errors.batch_size.message}
+                        </p>
+                    )}
                     <p className="text-[11px] text-slate-500 mt-2 leading-tight">
                         {selectedModel === "NOMAD"
                             ? "For NOMAD, this dictates the number of flattened coordinate points processed per step. It is highly recommended to use a power of 2 (e.g., 512, 2048) to optimize VRAM."
@@ -152,8 +165,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("step_x", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.step_x ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.step_x && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.step_x.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -165,8 +183,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("step_t", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.step_t ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.step_t && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.step_t.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -178,8 +201,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("m_sensors", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.m_sensors ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.m_sensors && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.m_sensors.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -191,8 +219,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("p_latent", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.p_latent ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.p_latent && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.p_latent.message}
+                                    </p>
+                                )}
                             </div>
                             <div className="col-span-2">
                                 <label className="block text-xs text-slate-600">
@@ -204,8 +237,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("hidden", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.hidden ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.hidden && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.hidden.message}
+                                    </p>
+                                )}
                             </div>
                         </>
                     )}
@@ -222,8 +260,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("nx_red", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.nx_red ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.nx_red && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.nx_red.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -235,8 +278,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("nt_red", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.nt_red ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.nt_red && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.nt_red.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -246,9 +294,14 @@ export default function ModelConfig({ isLoading }: Props) {
                                     type="text"
                                     disabled={disableArch}
                                     {...register("hidden_channels")}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.hidden_channels ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                     placeholder="e.g. 64, 64, 128"
                                 />
+                                {errors.hidden_channels && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.hidden_channels.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -258,9 +311,14 @@ export default function ModelConfig({ isLoading }: Props) {
                                     type="text"
                                     disabled={disableArch}
                                     {...register("modes")}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.modes ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                     placeholder="e.g. 32"
                                 />
+                                {errors.modes && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.modes.message}
+                                    </p>
+                                )}
                             </div>
                         </>
                     )}
@@ -302,8 +360,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("ca_lr_max", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.ca_lr_max ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.ca_lr_max && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.ca_lr_max.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -316,13 +379,17 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("ca_lr_min", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.ca_lr_min ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.ca_lr_min && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.ca_lr_min.message}
+                                    </p>
+                                )}
                             </div>
                         </>
                     ) : (
                         <>
-                            {/* ... (plateau inputs disabled={disableAll}) */}
                             <div>
                                 <label className="block text-xs text-slate-600">
                                     Start LR
@@ -334,8 +401,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("rop_start_lr", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.rop_start_lr ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.rop_start_lr && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.rop_start_lr.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -348,8 +420,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("rop_min_lr", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.rop_min_lr ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.rop_min_lr && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.rop_min_lr.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -362,8 +439,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("rop_factor", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.rop_factor ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.rop_factor && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.rop_factor.message}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs text-slate-600">
@@ -375,8 +457,13 @@ export default function ModelConfig({ isLoading }: Props) {
                                     {...register("rop_patience", {
                                         valueAsNumber: true,
                                     })}
-                                    className="w-full p-1.5 text-sm border rounded disabled:opacity-50"
+                                    className={`w-full p-1.5 text-sm border rounded disabled:opacity-50 ${errors.rop_patience ? "border-red-500 bg-red-50" : "border-slate-200"}`}
                                 />
+                                {errors.rop_patience && (
+                                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                                        {errors.rop_patience.message}
+                                    </p>
+                                )}
                             </div>
                         </>
                     )}

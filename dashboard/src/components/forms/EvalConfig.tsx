@@ -6,7 +6,10 @@ interface Props {
 }
 
 export default function EvalConfig({ isLoading }: Props) {
-    const { register } = useFormContext<SimulationFormValues>();
+    const {
+        register,
+        formState: { errors },
+    } = useFormContext<SimulationFormValues>();
 
     return (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center mt-2">
@@ -27,8 +30,13 @@ export default function EvalConfig({ isLoading }: Props) {
                     step="any"
                     disabled={isLoading}
                     {...register("sigma_test", { valueAsNumber: true })}
-                    className="mt-1 w-full p-2 text-sm border border-amber-300 rounded bg-white disabled:opacity-50"
+                    className={`mt-1 w-full p-2 text-sm border rounded bg-white disabled:opacity-50 ${errors.sigma_test ? "border-red-500 bg-red-50" : "border-amber-300"}`}
                 />
+                {errors.sigma_test && (
+                    <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                        {errors.sigma_test.message}
+                    </p>
+                )}
             </div>
         </div>
     );

@@ -223,6 +223,7 @@ export default function OrchestratorView({
                 {/* Form */}
                 <FormProvider {...methods}>
                     <form
+                        noValidate
                         onSubmit={methods.handleSubmit(onSubmit)}
                         className="space-y-8"
                     >
