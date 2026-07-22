@@ -160,13 +160,19 @@ export default function DocsView() {
                 <p>
                     The underlying physical problem used for these experiments
                     is the one-dimensional linear transport equation. It tracks
-                    the movement of a quantity (a Gaussian wave) over time and
-                    space:
+                    the movement of a quantity over time and space:
                 </p>
-                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 my-4 font-mono text-center text-slate-800">
-                    ∂<sub>t</sub>u(x,t) + c ∂<sub>x</sub>u(x,t) = 0,
-                    &nbsp;&nbsp; (x,t) ∈ ℝ × (0, t<sub>f</sub>)
+
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 my-4 font-mono text-center text-slate-800 flex flex-col gap-2">
+                    <span>
+                        ∂<sub>t</sub>u(x,t) + c ∂<sub>x</sub>u(x,t) = 0,
+                        &nbsp;&nbsp; (x,t) ∈ ℝ × (0, T)
+                    </span>
+                    <span>
+                        u(x,0) = u<sub>0</sub>(x), &nbsp;&nbsp; x ∈ ℝ
+                    </span>
                 </div>
+
                 <p>
                     The exact solution is a traveling wave:{" "}
                     <em>
@@ -177,15 +183,26 @@ export default function DocsView() {
                         u<sub>0</sub>(x)
                     </em>{" "}
                     is a Gaussian pulse governed by its variance{" "}
-                    <strong>σ</strong>. We map this via the parameter{" "}
-                    <strong>β</strong> (where σ = 10<sup>-β</sup>).
+                    <strong>σ</strong>:
+                </p>
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 my-4 font-mono text-center text-slate-800 text-lg">
+                    u<sub>0</sub>(x) = (1 / √(2πσ)) e<sup>-x² / 2σ</sup>
+                </div>
+
+                <p>
+                    We map this variance via the parameter <strong>β</strong>{" "}
+                    (where σ = 10<sup>-β</sup>).
                 </p>
                 <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg text-blue-900 mt-4 text-sm">
                     <strong>Why this specific problem?</strong> As Quarteroni
-                    notes, when the variance σ becomes very small, the
-                    eigenvalues of the correlation matrix show almost no decay.
-                    Standard linear Reduced Order Models (ROMs) struggle in this
-                    scenario.
+                    notes, the reducibility of this problem heavily depends on
+                    the variance. Depending on the value of σ, eigenvalues of
+                    the correlation matrix show a <em>fast decay</em> (σ = 10
+                    <sup>-1</sup>, 10<sup>-2</sup>), a <em>slow decay</em> (σ =
+                    10<sup>-3</sup>, 10<sup>-4</sup>), or even
+                    <strong> no decay at all</strong> (σ = 10<sup>-5</sup>, 10
+                    <sup>-6</sup>). Standard linear Reduced Order Models (ROMs)
+                    struggle in these low-variance scenarios.
                 </div>
             </Accordion>
 
