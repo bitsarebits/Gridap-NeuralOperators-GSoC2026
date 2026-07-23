@@ -164,7 +164,7 @@ git subtree split --prefix=experiments_NeuralOperators main -b extract-scripts-b
 git push public-origin extract-scripts-branch:main --force
 ```
 
-*(Prerequisite: You must have the public remote configured via `git remote add public-origin <public_repo_url>`)*
+*(Prerequisite: You must have the public remote configured via `git remote add public-origin https://github.com/bitsarebits/Gridap-NeuralOperators-GSoC2026.git`)*
 
 ---
 
