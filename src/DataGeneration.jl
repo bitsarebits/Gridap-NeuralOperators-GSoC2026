@@ -40,6 +40,7 @@ function generate_fem_snapshots(
     # Spatial domain setup
     Ω = (-L, L)
     partition = (nx,)
+    # model = CartesianDiscreteModel(Ω, partition, isperiodic=(true,))
     model = CartesianDiscreteModel(Ω, partition)
 
     # Temporal grid setup
