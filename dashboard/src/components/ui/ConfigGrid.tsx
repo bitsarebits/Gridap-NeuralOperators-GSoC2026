@@ -143,6 +143,7 @@ const EXPLICIT_NAMES: Record<string, ReactNode> = {
     max_epochs: <>Scheduler Epochs</>,
     patience: <>Patience</>,
     factor: <>Reduction Factor</>,
+    scheduler_name: <>Learning Rate Scheduler</>,
 };
 
 const LOGICAL_ORDER = [

@@ -3,6 +3,7 @@ import type { SimulationResponse } from "../types";
 import DeleteButton from "./ui/DeleteButton";
 import DownloadButton from "./ui/DownloadButton";
 import ShareButton from "./ui/ShareButton";
+import InteractiveEvaluationView from "./InteractiveEvaluationView";
 import { Trash2, ChevronDown } from "lucide-react";
 
 interface ResultsProps {
@@ -17,28 +18,38 @@ export default function Results({ result, onReset }: ResultsProps) {
     const modelHash = result.model_hash || "";
     const dataHash = result.data_hash || "";
     const imageUrl = result.image_url || "";
+    const evalData = result.eval_data;
 
     return (
         <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-5xl mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">
-                Evaluation Results
-            </h2>
-            <p className="text-slate-500 mb-6">
-                Zero-shot prediction vs High-Fidelity FEM data.
+            <div className="flex items-center justify-between gap-4 mb-1">
+                <h2 className="text-2xl font-bold text-slate-800">
+                    Interactive Zero-Shot Evaluation
+                </h2>
+                {evalData?.solver_name && (
+                    <span className="px-3 py-1 text-xs font-bold tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-full">
+                        {evalData.solver_name}
+                    </span>
+                )}
+            </div>
+            <p className="text-slate-500 text-sm mb-6">
+                Explore the full spatio-temporal solution, pointwise error
+                evolution, and benchmark metrics.
             </p>
 
-            <div className="border rounded-xl overflow-hidden bg-slate-50 flex justify-center p-4">
-                <img
-                    src={imageUrl}
-                    alt={`Plot for hash ${plotHash}`}
-                    className="max-w-full h-auto rounded-lg shadow-sm"
-                    onError={() =>
-                        console.error("Failed to render the Base64 image data.")
-                    }
-                />
-            </div>
+            {evalData ? (
+                <InteractiveEvaluationView evalData={evalData} />
+            ) : imageUrl ? (
+                <div className="border rounded-xl overflow-hidden bg-slate-50 flex justify-center p-4">
+                    <img
+                        src={imageUrl}
+                        alt={`Plot for hash ${plotHash}`}
+                        className="max-w-full h-auto rounded-lg shadow-sm"
+                    />
+                </div>
+            ) : null}
 
-            <div className="mt-6 flex justify-between items-center text-sm text-slate-500">
+            <div className="mt-6 pt-4 border-t border-slate-100 flex justify-between items-center text-sm text-slate-500">
                 <p>
                     Hash reference:{" "}
                     <span className="font-mono bg-slate-100 px-2 py-1 rounded text-slate-700">
@@ -77,7 +88,7 @@ export default function Results({ result, onReset }: ResultsProps) {
                                     targetHash={plotHash}
                                     targetType="evaluation"
                                     mode="local"
-                                    buttonLabel="Discard Plot Only"
+                                    buttonLabel="Discard Evaluation Only"
                                     onSuccess={onReset}
                                 />
 
@@ -86,7 +97,7 @@ export default function Results({ result, onReset }: ResultsProps) {
                                     targetHash={modelHash}
                                     targetType="model"
                                     mode="local"
-                                    buttonLabel="Discard Model & Plot"
+                                    buttonLabel="Discard Model & Evaluation"
                                     onSuccess={onReset}
                                 />
 
@@ -95,7 +106,7 @@ export default function Results({ result, onReset }: ResultsProps) {
                                     targetHash={dataHash}
                                     targetType="data"
                                     mode="local"
-                                    buttonLabel="Discard Entire Pipeline (Data+Model+Plot)"
+                                    buttonLabel="Discard Entire Pipeline (Data+Model+Eval)"
                                     onSuccess={onReset}
                                 />
                             </div>
@@ -104,10 +115,12 @@ export default function Results({ result, onReset }: ResultsProps) {
 
                     <ShareButton evalHash={plotHash} />
 
-                    <DownloadButton
-                        imageUrl={imageUrl}
-                        fileName={`evaluation_${plotHash}.png`}
-                    />
+                    {imageUrl && !evalData && (
+                        <DownloadButton
+                            imageUrl={imageUrl}
+                            fileName={`evaluation_${plotHash}.png`}
+                        />
+                    )}
                 </div>
             </div>
         </div>

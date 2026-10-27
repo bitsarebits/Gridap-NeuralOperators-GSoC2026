@@ -39,9 +39,25 @@ const mapRegistryToFormValues = (
           ? Object.values(solverObj.hidden_channels).join(", ")
           : String(solverObj.hidden_channels || defaultValues.hidden_channels);
 
-    // Extract LR Scheduler
+    // Extract LR Scheduler. New registry entries store `type` explicitly; infer it
+    // from the serialized fields for older entries that predate that metadata.
     const scheduler = solverObj.lr_scheduler || {};
-    const schedulerType = scheduler.type || defaultValues.lr_scheduler_type;
+    const legacySchedulerInfo = String(solverObj.scheduler_info || "");
+    const schedulerType =
+        scheduler.type === "Cosine"
+            ? "CosineAnnealing"
+            : scheduler.type === "Plateau"
+              ? "ReduceLROnPlateau"
+              : scheduler.type ||
+                (scheduler.lr_max !== undefined || scheduler.max_epochs !== undefined
+                    ? "CosineAnnealing"
+                    : scheduler.patience !== undefined ||
+                        scheduler.current_lr !== undefined ||
+                        legacySchedulerInfo.includes("ReduceLROnPlateau")
+                      ? "ReduceLROnPlateau"
+                      : legacySchedulerInfo.includes("CosineAnnealing")
+                        ? "CosineAnnealing"
+                        : defaultValues.lr_scheduler_type);
 
     return {
         // FEM

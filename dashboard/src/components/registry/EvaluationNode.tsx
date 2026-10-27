@@ -7,12 +7,18 @@ import {
     AlertCircle,
     Cloud,
     HardDrive,
+    Trophy,
 } from "lucide-react";
-import { fetchEvaluationPlot } from "../../api";
+import { fetchCloudEvaluationJson, fetchEvaluationPlot } from "../../api";
 import ShareButton from "../ui/ShareButton";
 import DownloadButton from "../ui/DownloadButton";
 import SyncWorkspaceButton from "../ui/SyncWorkspaceButton";
-import type { RegistryData } from "../../types";
+import InteractiveEvaluationView from "../InteractiveEvaluationView";
+import type {
+    ArenaCandidate,
+    InteractiveEvalData,
+    RegistryData,
+} from "../../types";
 import DeleteButton from "../ui/DeleteButton";
 
 interface Props {
@@ -21,6 +27,9 @@ interface Props {
     solverType: string;
     serverIsConnected: boolean;
     registry: RegistryData;
+    isSelectedForArena?: boolean;
+    referenceArenaCandidate?: ArenaCandidate | null;
+    onToggleArena?: (candidate: ArenaCandidate) => void;
 }
 
 export default function EvaluationNode({
@@ -29,6 +38,9 @@ export default function EvaluationNode({
     solverType,
     serverIsConnected,
     registry,
+    isSelectedForArena = false,
+    onToggleArena,
+    referenceArenaCandidate,
 }: Props) {
     // State
     const [isExpanded, setIsExpanded] = useState(false);
@@ -36,6 +48,7 @@ export default function EvaluationNode({
     const [plotImage, setPlotImage] = useState<string | null>(
         evalObj.image_url || null,
     ); // Initialized if it came from firebase
+    const [evalData, setEvalData] = useState<InteractiveEvalData | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     // Metadata flags for UI
@@ -71,6 +84,7 @@ export default function EvaluationNode({
                   data_url: femConfig.data_url || "",
                   model_url: modelConfig.model_url || "",
                   image_url: evalObj.image_url || "",
+                  eval_url: evalObj.eval_url || "",
               }
             : null;
 
@@ -78,19 +92,30 @@ export default function EvaluationNode({
         const willExpand = !isExpanded;
         setIsExpanded(willExpand);
 
-        if (willExpand && !plotImage && isLocal) {
+        if (willExpand && !evalData && !plotImage) {
             setIsLoading(true);
             setError(null);
             try {
-                const res = await fetchEvaluationPlot(evalHash, solverType);
-                if (res.status === "success" && res.image_url) {
-                    setPlotImage(res.image_url);
-                } else {
-                    setError(res.message || "Image not found on local disk.");
+                if (isLocal && serverIsConnected) {
+                    const res = await fetchEvaluationPlot(evalHash, solverType);
+                    if (res.status === "success") {
+                        if (res.eval_data) setEvalData(res.eval_data);
+                        else if (res.image_url) setPlotImage(res.image_url);
+                    } else {
+                        setError(
+                            res.message ||
+                                "Evaluation not found on local disk.",
+                        );
+                    }
+                } else if (evalObj.eval_url) {
+                    const cloudData = await fetchCloudEvaluationJson(
+                        evalObj.eval_url,
+                    );
+                    setEvalData(cloudData);
                 }
             } catch (err) {
-                console.error("Failed to load local plot:", err);
-                setError("Failed to fetch plot from local server.");
+                console.error("Failed to load evaluation:", err);
+                setError("Failed to fetch evaluation data.");
             } finally {
                 setIsLoading(false);
             }
@@ -100,6 +125,24 @@ export default function EvaluationNode({
     const evalConfig = evalObj.eval_config || evalObj;
     const sigmaTest = evalConfig.sigma_test || "N/A";
 
+    const numericSigma = Number(sigmaTest);
+    const hasInteractiveArtifact = isLocal
+        ? (evalObj.benchmark_version ?? 2) === 2
+        : Boolean(evalObj.eval_url);
+
+    const isArenaCompatible =
+        hasInteractiveArtifact &&
+        Boolean(dataHash) &&
+        Number.isFinite(numericSigma) &&
+        (!referenceArenaCandidate ||
+            (referenceArenaCandidate.dataHash === dataHash &&
+                Math.abs(
+                    Number(referenceArenaCandidate.sigmaTest) - numericSigma,
+                ) <= 1e-12));
+
+    const showArenaButton =
+        Boolean(onToggleArena) && (isSelectedForArena || isArenaCompatible);
+
     return (
         <div className="border border-slate-100 bg-white rounded-lg overflow-hidden shadow-2xs">
             <div
@@ -107,6 +150,34 @@ export default function EvaluationNode({
                 className="p-3 flex items-center justify-between text-xs cursor-pointer hover:bg-slate-50/60 select-none"
             >
                 <div className="flex items-center gap-2.5 pl-4">
+                    {/* Arena Selection Checkbox */}
+                    {showArenaButton && onToggleArena && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleArena({
+                                    evalHash,
+                                    modelHash,
+                                    dataHash: dataHash || "",
+                                    solverType: parsedModelType,
+                                    sigmaTest,
+                                    evalUrl: evalObj.eval_url,
+                                    isLocal,
+                                });
+                            }}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold transition-all cursor-pointer ${
+                                isSelectedForArena
+                                    ? "bg-amber-100 border-amber-300 text-amber-900"
+                                    : "bg-slate-50 border-slate-200 text-slate-500 hover:border-amber-300"
+                            }`}
+                            title="Select to compare in Arena Mode"
+                        >
+                            <Trophy size={11} />
+                            {isSelectedForArena ? "In Arena" : "Arena"}
+                        </button>
+                    )}
+
                     <LineChart size={14} className="text-amber-600" />
                     <span className="font-semibold text-slate-700">
                         Zero-Shot Report (σ_test: {sigmaTest})
@@ -127,7 +198,7 @@ export default function EvaluationNode({
                 </div>
                 <div className="flex items-center gap-1 text-slate-400">
                     <span className="text-[10px] mr-2">
-                        Click to inspect plot
+                        Click to inspect evaluation
                     </span>
                     {isExpanded ? (
                         <ChevronDown size={14} />
@@ -145,8 +216,49 @@ export default function EvaluationNode({
                                 size={14}
                                 className="animate-spin text-blue-500"
                             />
-                            Reading CairoMakie matrix binary from disk...
+                            Loading spatio-temporal evaluation tensors...
                         </div>
+                    ) : evalData ? (
+                        <>
+                            <div className="w-full">
+                                <InteractiveEvaluationView
+                                    evalData={evalData}
+                                    compact={true}
+                                />
+                            </div>
+                            <div className="w-full flex justify-end items-center gap-2 mt-2">
+                                {isShared && serverIsConnected && (
+                                    <DeleteButton
+                                        targetHash={evalHash}
+                                        targetType="evaluation"
+                                        mode="cloud"
+                                        buttonLabel="Remove from Cloud"
+                                        parentModelHash={modelHash}
+                                        parentDataHash={dataHash}
+                                    />
+                                )}
+                                {isLocal && (
+                                    <DeleteButton
+                                        targetHash={evalHash}
+                                        targetType="evaluation"
+                                        mode="local"
+                                        buttonLabel="Delete Local File"
+                                    />
+                                )}
+                                {!isShared && (
+                                    <ShareButton evalHash={evalHash} />
+                                )}
+                                {isShared &&
+                                    !isLocal &&
+                                    serverIsConnected &&
+                                    syncPayload && (
+                                        <SyncWorkspaceButton
+                                            isLocal={isLocal}
+                                            syncPayload={syncPayload}
+                                        />
+                                    )}
+                            </div>
+                        </>
                     ) : plotImage ? (
                         <>
                             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white p-2 w-full max-w-3xl">
@@ -203,7 +315,7 @@ export default function EvaluationNode({
                         <div className="text-xs text-red-500 font-medium py-4 flex items-center gap-1">
                             <AlertCircle size={14} />{" "}
                             {error ||
-                                `The plot file 'eval_${evalHash}.png' was not found.`}
+                                `The evaluation file for '${evalHash}' was not found.`}
                         </div>
                     )}
                 </div>

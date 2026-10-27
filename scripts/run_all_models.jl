@@ -57,7 +57,7 @@ function run_pipeline(
 
     # Evaluation and plotting
     log_cb(Dict("type" => "status", "stage" => "Phase 3/3: Model Evaluation and Plotting..."))
-    eval_hash = run_plot(solver, model_hash, eval_config)
+    eval_hash = run_plot(solver, model_hash, eval_config; log_cb)
 
     log_cb(Dict("type" => "status", "stage" => "Pipeline completed successfully!"))
 

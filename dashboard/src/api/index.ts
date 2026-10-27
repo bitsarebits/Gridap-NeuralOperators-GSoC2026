@@ -1,6 +1,7 @@
 import axios from "axios";
 import type {
     CacheCheckResponse,
+    InteractiveEvalData,
     PlotResponse,
     RegistryData,
     RegistryResponse,
@@ -25,7 +26,7 @@ export const pingServer = async (): Promise<boolean> => {
     try {
         const response = await api.get("/api/ping");
         return response.data.status === "ok";
-    } catch (error) {
+    } catch {
         return false;
     }
 };
@@ -56,6 +57,13 @@ export const fetchEvaluationPlot = async (
     return response.data;
 };
 
+export const fetchCloudEvaluationJson = async (
+    evalUrl: string,
+): Promise<InteractiveEvalData> => {
+    const response = await axios.get<InteractiveEvalData>(evalUrl);
+    return response.data;
+};
+
 export const checkShareStatus = async (): Promise<boolean> => {
     try {
         const response = await api.get("/api/status");
@@ -73,15 +81,9 @@ export const shareExperiment = async (
         const response = await api.post<ShareResponse>("/api/share", payload);
         return response.data;
     } catch (error: any) {
-        if (
-            error.response &&
-            error.response.data &&
-            error.response.data.message
-        ) {
+        if (error.response?.data?.message) {
             throw new Error(error.response.data.message);
         }
-
-        // Fallback
         throw new Error(
             "Failed to connect to the server to share the experiment.",
         );
@@ -156,7 +158,8 @@ export const fetchSharedRegistry = async (): Promise<RegistryData> => {
             sharedRegistry.evaluations[evalHash] = {
                 ...parsedDoc.eval_config,
                 model_hash: modelHash,
-                image_url: parsedDoc.image_url, // Store the public Firebase Storage URL
+                image_url: parsedDoc.image_url || "",
+                eval_url: parsedDoc.eval_url || "",
                 _isShared: true,
             };
         });

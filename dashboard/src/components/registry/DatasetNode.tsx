@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import ConfigGrid, { FORBIDDEN_KEYS } from "../ui/ConfigGrid";
 import ModelNode from "./ModelNode";
-import type { RegistryData, SyncPayload } from "../../types";
+import type { ArenaCandidate, RegistryData, SyncPayload } from "../../types";
 import DeleteButton from "../ui/DeleteButton";
 import SyncWorkspaceButton from "../ui/SyncWorkspaceButton";
 
@@ -23,6 +23,9 @@ interface Props {
         solverConfig: any,
         femConfig: any,
     ) => void;
+    selectedArenaHashes?: Set<string>;
+    referenceArenaCandidate?: ArenaCandidate | null;
+    onToggleArena?: (c: ArenaCandidate) => void;
 }
 
 export default function DatasetNode({
@@ -31,6 +34,9 @@ export default function DatasetNode({
     registry,
     serverIsConnected,
     onFineTune,
+    selectedArenaHashes,
+    onToggleArena,
+    referenceArenaCandidate,
 }: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
 
@@ -193,6 +199,11 @@ export default function DatasetNode({
                                 registry={registry}
                                 serverIsConnected={serverIsConnected}
                                 onFineTune={onFineTune}
+                                selectedArenaHashes={selectedArenaHashes}
+                                onToggleArena={onToggleArena}
+                                referenceArenaCandidate={
+                                    referenceArenaCandidate
+                                }
                             />
                         ))
                     )}

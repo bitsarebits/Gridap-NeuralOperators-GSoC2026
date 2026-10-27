@@ -268,9 +268,19 @@ end
                                 )
 
                                 solver_name = get_solver_name(solver)
+                                json_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).json")
                                 image_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).png")
 
-                                if isfile(image_path)
+                                if isfile(json_path)
+                                    eval_data = JSON3.read(read(json_path, String), Dict{String,Any})
+                                    log_cb(Dict(
+                                        "type" => "success",
+                                        "data_hash" => data_hash,
+                                        "model_hash" => model_hash,
+                                        "eval_hash" => eval_hash,
+                                        "eval_data" => eval_data
+                                    ))
+                                elseif isfile(image_path)
                                     image_b64 = base64encode(read(image_path))
                                     image_url = "data:image/png;base64," * image_b64
                                     log_cb(Dict(
@@ -281,7 +291,7 @@ end
                                         "image_url" => image_url
                                     ))
                                 else
-                                    error("Image not found on disk after generation")
+                                    error("Evaluation output not found on disk after generation")
                                 end
                             catch e
                                 if e isa InterruptException || (e isa TaskFailedException && occursin("InterruptException", string(e)))
@@ -417,7 +427,8 @@ end
         # Check Eval Hash
         eval_dict = Dict(
             "model_hash" => model_hash,
-            "eval_config" => HashRegistry.struct_to_dict(eval_config)
+            "eval_config" => HashRegistry.struct_to_dict(eval_config),
+            "benchmark_version" => Pipelines.EVALUATION_BENCHMARK_VERSION,
         )
         eval_hash = HashRegistry.config_hash(eval_dict)
         eval_exists = HashRegistry.check_registry("evaluations", eval_hash)
@@ -456,17 +467,21 @@ end
     end
 end
 
-# Endpoint to Fetch a specific evaluation plot from disk as Base64
+# Endpoint to Fetch a specific evaluation (JSON interactive data or legacy Base64 PNG)
 @post "/api/get_evaluation_plot" function (req::HTTP.Request)
     try
         payload = JSON3.read(req.body)
         eval_hash = String(payload["eval_hash"])
         solver_type = lowercase(String(payload["solver_type"]))
 
-        @info "Serving evaluation plot for $solver_type (Hash: $eval_hash)"
+        @info "Serving evaluation data for $solver_type (Hash: $eval_hash)"
+        json_path = plotsdir(solver_type, "eval_$(eval_hash).json")
         image_path = plotsdir(solver_type, "eval_$(eval_hash).png")
 
-        if isfile(image_path)
+        if isfile(json_path)
+            eval_data = JSON3.read(read(json_path, String), Dict{String,Any})
+            return JSON3.write(Dict("status" => "success", "eval_data" => eval_data))
+        elseif isfile(image_path)
             image_b64 = base64encode(read(image_path))
             image_url = "data:image/png;base64," * image_b64
             return JSON3.write(Dict("status" => "success", "image_url" => image_url))
@@ -474,11 +489,11 @@ end
             return HTTP.Response(
                 404,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict("status" => "error", "message" => "Plot image not found on disk."))
+                JSON3.write(Dict("status" => "error", "message" => "Evaluation file not found on disk."))
             )
         end
     catch e
-        @error "Failed to retrieve evaluation plot" exception=(e, catch_backtrace())
+        @error "Failed to retrieve evaluation data" exception=(e, catch_backtrace())
         return HTTP.Response(
             400,
             ["Content-Type" => "application/json"],
@@ -528,7 +543,7 @@ end
         return HTTP.Response(
             404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => "Evaluation hash not found in local registry. Cannot verify mathematical integrity."))
+            JSON3.write(Dict("status" => "error", "message" => "Evaluation hash not found in local registry."))
         )
     end
 
@@ -544,14 +559,18 @@ end
 
     # Verify the image exists locally
     image_path = plotsdir(solver_type, "eval_$(eval_hash).png")
+    json_path = plotsdir(solver_type, "eval_$(eval_hash).json")
+    has_json = isfile(json_path)
+    eval_file_path = has_json ? json_path : image_path
+
     data_path = datadir("sims", "data_$(data_hash).jld2")
     model_path = datadir("models", solver_type, "model_$(model_hash).jld2")
 
-    if !isfile(image_path) || !isfile(data_path) || !isfile(model_path)
+    if !isfile(eval_file_path) || !isfile(data_path) || !isfile(model_path)
         return HTTP.Response(404, ["Content-Type" => "application/json"],
             JSON3.write(Dict(
                 "status" => "error",
-                "message" => "Some required files (plot, data, or model) are missing from disk."
+                "message" => "Some required files (evaluation, data, or model) are missing from disk."
             )))
     end
 
@@ -567,16 +586,14 @@ end
         )
     end
 
-    if FirebaseREST.check_document_exists(token, "shared_experiments", eval_hash)
-        @info "Experiment $eval_hash is already in the global gallery. Skipping upload."
+    ext = has_json ? "json" : "png"
+    mime_type = has_json ? "application/json" : "image/png"
 
-        # Get the project_id to reconstruct the image URL
+    if FirebaseREST.check_document_exists(token, "shared_experiments", eval_hash)
         cred = Auth.get_firebase_credentials()
         project_id = cred["project_id"]
         bucket_name = "$(project_id).firebasestorage.app"
-
-        # reconstruct the URL
-        reconstructed_url = "https://firebasestorage.googleapis.com/v0/b/$(bucket_name)/o/plots%2F$(eval_hash).png?alt=media"
+        reconstructed_url = "https://firebasestorage.googleapis.com/v0/b/$(bucket_name)/o/plots%2F$(eval_hash).$(ext)?alt=media"
 
         return JSON3.write(Dict(
             "status" => "success",
@@ -586,9 +603,8 @@ end
         ))
     end
 
-    # Upload Data, Model and Plot to Cloud Storage
-    @info "Uploading evaluation plot..."
-    image_url = FirebaseREST.upload_to_storage(token, image_path, "plots/$(eval_hash).png"; content_type="image/png")
+    @info "Uploading evaluation artifact ($ext)..."
+    artifact_url = FirebaseREST.upload_to_storage(token, eval_file_path, "plots/$(eval_hash).$(ext)"; content_type=mime_type)
 
     @info "Uploading high-fidelity FEM data..."
     data_url = FirebaseREST.upload_to_storage(token, data_path, "data/$(data_hash).jld2")
@@ -596,7 +612,7 @@ end
     @info "Uploading Neural Operator weights..."
     model_url = FirebaseREST.upload_to_storage(token, model_path, "models/$(model_hash).jld2")
 
-    if isnothing(image_url) || isnothing(data_url) || isnothing(model_url)
+    if isnothing(artifact_url) || isnothing(data_url) || isnothing(model_url)
         return HTTP.Response(500, ["Content-Type" => "application/json"],
             JSON3.write(Dict(
                 "status" => "error",
@@ -617,7 +633,8 @@ end
         "fem_config" => data_config,
         "solver_config" => model_data["solver"],
         "eval_config" => eval_data["eval_config"],
-        "image_url" => image_url,
+        "image_url" => has_json ? "" : artifact_url,
+        "eval_url" => has_json ? artifact_url : "",
         "data_url" => data_url,
         "model_url" => model_url
     )
@@ -629,7 +646,7 @@ end
         return JSON3.write(Dict(
             "status" => "success",
             "message" => "Experiment published successfully to the global gallery!",
-            "public_url" => image_url,
+            "public_url" => artifact_url,
             "already_exists" => false
         ))
     else
@@ -669,7 +686,7 @@ end
 
     # Internal helper to clean up database and frontend metadata
     function clean_config(d::Dict)
-        forbidden_keys = ["_isShared", "_isLocal", "model_url", "data_url", "image_url", "data_hash", "model_hash", "eval_hash", "solver_type", "model_type", "download_url"]
+        forbidden_keys = ["_isShared", "_isLocal", "model_url", "data_url", "image_url", "eval_url", "data_hash", "model_hash", "eval_hash", "solver_type", "model_type", "download_url"]
         return Dict{String,Any}(string(k) => v for (k, v) in pairs(d) if !(string(k) in forbidden_keys))
     end
 
@@ -748,25 +765,30 @@ end
         end
     end
 
-    # SYNC ZERO-SHOT EVALUATION PLOT
+    # SYNC ZERO-SHOT EVALUATION (JSON OR LEGACY PNG)
     if sync_success && !isnothing(eval_hash) && haskey(payload, "eval_config")
         if isempty(solver_type)
-            @warn "Model type missing. Cannot sync plot."
+            @warn "Model type missing. Cannot sync artifact."
         else
-            plot_dest = plotsdir(solver_type, "eval_$(eval_hash).png")
+            eval_url = get(payload, "eval_url", "")
             image_url = get(payload, "image_url", "")
+            is_json_eval = !isempty(eval_url) || occursin(".json", image_url)
+            target_url = !isempty(eval_url) ? eval_url : image_url
+            ext = is_json_eval ? "json" : "png"
 
-            if !isfile(plot_dest) && !isempty(image_url)
+            plot_dest = plotsdir(solver_type, "eval_$(eval_hash).$(ext)")
+
+            if !isfile(plot_dest) && !isempty(target_url)
                 mkpath(dirname(plot_dest))
-                @info "Downloading Evaluation plot [$(eval_hash)]..."
+                @info "Downloading Evaluation artifact [$(eval_hash)]..."
                 try
-                    HTTP.download(image_url, plot_dest)
+                    HTTP.download(target_url, plot_dest)
                 catch e
-                    @error "Failed to download Evaluation Plot" exception=(e, catch_backtrace())
+                    @error "Failed to download Evaluation artifact" exception=(e, catch_backtrace())
                     sync_success = false
                 end
             else
-                @info "Evaluation plot [$(eval_hash)] already exists or URL missing. Skipping download."
+                @info "Evaluation artifact [$(eval_hash)] already exists or URL missing. Skipping download."
             end
 
             if sync_success && !haskey(registry["evaluations"], eval_hash)
@@ -839,12 +861,14 @@ end
 
     @info "Executing cascading delete for $target_type [$target_hash]..."
 
-    # Delete Evaluations (Plots)
+    # Delete Evaluations
     for e_h in evals_to_delete
         m_h = registry["evaluations"][e_h]["model_hash"]
         solver_type = lowercase(get(registry["models"][m_h], "solver_type", get(registry["models"][m_h], "model_type", "unknown")))
-        plot_path = plotsdir(solver_type, "eval_$(e_h).png")
-        isfile(plot_path) && rm(plot_path)
+        json_path = plotsdir(solver_type, "eval_$(e_h).json")
+        png_path = plotsdir(solver_type, "eval_$(e_h).png")
+        isfile(json_path) && rm(json_path)
+        isfile(png_path) && rm(png_path)
         delete!(registry["evaluations"], e_h)
     end
 
@@ -892,8 +916,9 @@ end
         return HTTP.Response(500, JSON3.write(Dict("status" => "error", "message" => "Failed to authenticate securely with Firebase.")))
     end
 
-    # Delete the specific Firestore document and its Plot Image
+    # Delete the specific Firestore document and its Plot
     doc_deleted = FirebaseREST.delete_from_firestore(token, "shared_experiments", eval_hash)
+    FirebaseREST.delete_from_storage(token, "plots/$(eval_hash).json")
     FirebaseREST.delete_from_storage(token, "plots/$(eval_hash).png")
 
     if doc_deleted

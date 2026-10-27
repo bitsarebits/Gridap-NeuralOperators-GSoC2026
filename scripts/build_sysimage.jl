@@ -10,7 +10,7 @@ packages_to_compile = [
     "NeuralOperators",
     "Oxygen",
     "HTTP",
-    "CairoMakie"
+    "JSON3"
 ]
 
 # Create the sysimages directory if it doesn't exist

@@ -3,7 +3,7 @@
 [![Live Dashboard](https://img.shields.io/badge/Live_Dashboard-GitHub_Pages-blue?style=for-the-badge&logo=github)](https://bitsarebits.github.io/Gridap-NeuralOperators-GSoC2026/)
 [![GSoC Devlog](https://img.shields.io/badge/Read-GSoC_Devlog-2ea44f?style=for-the-badge&logo=markdown)](https://bitsarebits.github.io/gsoc2026-gridap/)
 
-This subfolder contains the Julia scripts designed to test the integration between `NeuralOperators.jl` and `GridapROMs.jl`. The workflow covers High-Fidelity FEM data generation, model training (with `Lux.jl` and `Enzyme.jl` for AD), and zero-shot evaluation. 
+This repository contains the Julia scripts and web orchestrator designed to test the integration between `NeuralOperators.jl` and `GridapROMs.jl`. The workflow covers High-Fidelity FEM data generation, model training (with `Lux.jl`, `Reactant.jl`, and `Enzyme.jl` for AD), and interactive zero-shot evaluation.
 
 To ensure strict reproducibility and avoid redundant computations, the entire pipeline is managed using `DrWatson.jl` and a custom SHA-256 caching mechanism (`HashRegistry.jl`).
 
@@ -11,18 +11,12 @@ To ensure strict reproducibility and avoid redundant computations, the entire pi
 
 We consider the one-dimensional linear transport equation (Reference: *Reduced Basis Methods for Partial Differential Equations*, Quarteroni):
 
-$$
-\partial_t u(x,t) + c \partial_x u(x,t) = 0, \quad (x,t) \in \mathbb{R} \times (0,t_f)
-$$
-$$
-u(x,0) = u_0(x), \quad x \in \mathbb{R}
-$$
+$$\partial_t u(x,t) + c \partial_x u(x,t) = 0, \quad (x,t) \in \mathbb{R} \times (0,t_f)$$
+$$u(x,0) = u_0(x), \quad x \in \mathbb{R}$$
 
 The exact solution is a traveling wave $u(x,t) = u_0(x - ct)$. By default, the scripts assume a wave speed of $c = 1.0$ and a final simulation time $t_f = 1.0$ (both adjustable via keyword arguments). The initial condition is defined as a Gaussian pulse:
 
-$$
-u_0(x) = \frac{1}{\sqrt{2\pi\sigma}} \exp\left(-\frac{x^2}{2\sigma}\right)
-$$
+$$u_0(x) = \frac{1}{\sqrt{2\pi\sigma}} \exp\left(-\frac{x^2}{2\sigma}\right)$$
 
 The primary physical parameter of interest is the variance $\sigma$, expressed as $\sigma = 10^{-\beta}$. In our parametrical studies, $\beta$ acts as the variable used to generate varying snapshots, mapping the parameter space for both training and evaluating the reduced-order models.
 
@@ -59,7 +53,7 @@ The architecture is modular and designed for interactive experimentation directl
 
    # 2. Define the solver and its hyperparameters
    julia> solver = FNOSolver(epochs=5000, modes=(16, 16))
-   FNOSolver(5000, 256, 50, LRSchedulers.CosineAnnealing(0.001f0, 1.0f-6, 20000), (64, 64, 128), (16, 16))
+   FNOSolver(5000, 32, 256, 50, LRSchedulers.CosineAnnealing(0.001f0, 1.0f-6, 20000), (64, 64, 128), (16, 16), "")
 
    # 3. Define the evaluation parameters
    julia> eval_setup = EvalConfig(sigma_test=0.05)
@@ -67,7 +61,7 @@ The architecture is modular and designed for interactive experimentation directl
    ```
 
 4. **Execute the Pipeline**:
-   The pipeline will automatically handle data generation, training, and plotting. Thanks to the hashing registry, any previously completed step will be instantly loaded from the cache rather than recomputed.
+   The pipeline will automatically handle data generation, training, and evaluation. Thanks to the hashing registry, any previously completed step will be instantly loaded from the cache rather than recomputed.
    ```julia
    julia> run_pipeline(solver, fem_setup, eval_setup)
    ```
@@ -77,10 +71,10 @@ The architecture is modular and designed for interactive experimentation directl
 To ensure maximum performance and zero-overhead startup, this project supports the creation of a custom Julia system image. This is highly recommended for frequent experimentation.
 
 #### Building the System Image
-The build process compiles heavy dependencies (`Gridap`, `Lux`, `Reactant`, `CairoMakie`, etc.) into a pre-linked binary.
+The build process compiles heavy dependencies (`Gridap`, `GridapROMs`, `Lux`, `Reactant`, `Enzyme`, `NeuralOperators`, `Oxygen`, etc.) into a pre-linked binary.
 
 ```bash
-# Execute the build script from the root folder
+# Execute the build script from the project root
 julia --project=. scripts/build_sysimage.jl
 ```
 
@@ -110,61 +104,34 @@ julia scripts/run_all_models.jl fno 10000 0.05 1000
 
 **Live Public Gallery:** [https://bitsarebits.github.io/Gridap-NeuralOperators-GSoC2026/](https://bitsarebits.github.io/Gridap-NeuralOperators-GSoC2026/)
 
-This project includes a React web dashboard to orchestrate experiments and visualize High-Fidelity snapshots, training progress, and zero-shot evaluations in real-time. 
+This project includes a React web dashboard to orchestrate experiments and visualize High-Fidelity snapshots, training progress, and zero-shot evaluations in real-time.
 
-**Node.js is NOT required**. The frontend has been pre-compiled into a static build, and the `Oxygen.jl` Julia backend is natively configured to serve it.
+**Node.js is NOT required** for end-users. The frontend has been pre-compiled into a static build, and the `Oxygen.jl` Julia backend is natively configured to serve it.
 
 ### How to Start the Dashboard via Julia
 
-1. Open your terminal in the root of this subfolder.
+1. Open your terminal in the project root directory.
 2. Launch the integrated web-server script using Julia:
    ```bash
-   # If running the script from the repository root
-   julia experiments_NeuralOperators/scripts/server_dashboard.jl
-
-   # If running the script from experiments_NeuralOperators/ folder
-   julia scripts/server_dashboard.jl
+   julia --project=. scripts/server_dashboard.jl
    ```
 3. Open your web browser and navigate to:
    ```text
-   http://127.0.0.1:8080
+   [http://127.0.0.1:8080](http://127.0.0.1:8080)
    ```
 
 ### Features available via the UI:
-* **Interactive Parameter Tuning:** Configure `FEMConfig`, `DeepONetSolver`, `FNOSolver`, or `NOMADSolver` using visual controls.
-* **Live WebSocket Streaming:** Watch the loss function drop and see the predicted traveling waves update frame-by-frame during the training loop.
-* **Zero-Shot Error Analysis:** Instantly plot the absolute error between Gridap's FEM high-fidelity solution and the Neural Operator's response on unseen $\sigma$ values.
-* **Cloud Sync & Fine-Tuning:** Download shared experiments from the global Firebase gallery to your local DrWatson workspace, and use existing model weights (`pretrained_model_hash`) as a starting point for fine-tuning new architectures.
+- **Interactive Parameter Tuning:** Configure `FEMConfig`, `DeepONetSolver`, `FNOSolver`, or `NOMADSolver` using visual controls.
+- **Live WebSocket Telemetry:** Monitor real-time training progress and watch the MSE loss curve converge live on a logarithmic chart.
+- **Interactive Spatio-Temporal Evaluation:** Inspect zero-shot predictions on unseen $\sigma$ values via a 1D Time-Machine player, 2D spatio-temporal heatmaps, temporal error evolution strips $E(t)$, and executive KPI cards.
+- **Multi-Model Benchmark Arena:** Compare multiple neural operators side-by-side on the same FEM dataset and test parameter with synchronized wave overlays, Pareto frontier charts (speed vs. accuracy), and leaderboard tables.
+- **Cloud Sync & Fine-Tuning:** Download shared experiments from the global Firebase gallery to your local DrWatson workspace, and use existing model weights (`pretrained_model_hash`) as a starting point for fine-tuning.
 
 ### Full-Stack Development
 If you are actively developing both the Julia backend and the React frontend, use the unified development launcher. It automatically utilizes the custom sysimage if available:
 ```bash
 ./dev.sh
 ```
-
-## Public Deployment & GitHub Pages Workflow
-
-The dashboard is automatically deployed to a public GitHub Pages URL as a "Read-Only Gallery", fetching data from Firestore. Because the main development repository is kept **private**, this specific subfolder is mirrored to a separate **public** repository.
-
-### Updating the Live Dashboard (For Maintainers)
-
-The private repository acts as the absolute Source of Truth. All code changes and static builds (`npm run build` inside `/dashboard/`) must be committed there first.
-
-To synchronize the public repository and trigger a GitHub Pages update without affecting the private repository's history, run the following Git Subtree sequence from the root of the private repository:
-
-
-```bash
-# 1. Clean up any previous extraction branch
-git branch -D extract-scripts-branch
-
-# 2. Extract the subfolder into a clean, isolated branch
-git subtree split --prefix=experiments_NeuralOperators main -b extract-scripts-branch
-
-# 3. Force push the isolated branch to the public remote repository
-git push public-origin extract-scripts-branch:main --force
-```
-
-*(Prerequisite: You must have the public remote configured via `git remote add public-origin https://github.com/bitsarebits/Gridap-NeuralOperators-GSoC2026.git`)*
 
 ---
 
@@ -184,7 +151,6 @@ All parameters are structurally defined in `src/Solvers.jl` along with their def
 | `nx` | `1000` | Number of spatial partitions for the FEM mesh. |
 | `t0`, `dt`, `tf` | `0.0`, `0.01`, `1.0` | Initial time, time step, and final simulation time. |
 | `c`, `theta` | `1.0`, `0.5` | Advection velocity and Theta-method integration parameter. |
-
 
 ### `DeepONetSolver` & `NOMADSolver` Hyperparameters
 
@@ -238,11 +204,11 @@ Dynamically reduces the learning rate by a `factor` when the loss stops improvin
 | `factor` | `0.5f0` | Multiplicative factor for the learning rate decay. |
 
 ---
-*Note: Data and Model hashes are securely managed and cached in `data/registry.json`. Computations are automatically bypassed if a matching configuration hash is detected.*
+*Note: Data, Model, and Evaluation hashes are securely managed and cached in `data/registry.json`. Computations are automatically bypassed if a matching configuration hash is detected.*
 
 ### Acknowledgments & AI Disclaimer
 
-This project was developed as an open-source contribution for the **[Google Summer of Code (GSoC) 2026](https://summerofcode.withgoogle.com/)** program, participating under the **[NumFOCUS](https://numfocus.org/)** umbrella for the **[Gridap](https://gridap.github.io/Gridap.jl/stable/)** organization. 
+This project was developed as an open-source contribution for the **[Google Summer of Code (GSoC) 2026](https://summerofcode.withgoogle.com/)** program, participating under the **[NumFOCUS](https://numfocus.org/)** umbrella for the **[Gridap](https://gridap.github.io/Gridap.jl/stable/)** organization.
 
 **AI Usage:** *To accelerate the development of the non-core aspects of this project, I used Google Gemini as a conversational assistant. It helped scaffold the React dashboard UI, set up the basic server boilerplate, and refine the English documentation. **No autonomous coding agents were used.** All mathematical implementations, Julia workflows (`Gridap`, `DrWatson`, `Lux`), and architectural decisions were designed and written entirely by me.*
 

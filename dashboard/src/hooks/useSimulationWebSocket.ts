@@ -1,5 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { SimulationPayload, SimulationResponse } from "../types";
+import type {
+    LossPoint,
+    SimulationPayload,
+    SimulationResponse,
+} from "../types";
 
 const SESSION_KEY = "gridap_simulation_session_id";
 const WS_URL = "ws://127.0.0.1:8080/ws/simulate";
@@ -35,6 +39,7 @@ export const useSimulationSocket = (
     const [result, setResult] = useState<SimulationResponse | null>(null);
     const [statusMessage, setStatusMessage] = useState<string>("");
     const [progress, setProgress] = useState<SimulationProgress | null>(null);
+    const [lossHistory, setLossHistory] = useState<LossPoint[]>([]);
 
     // Helper: retrieve a clean session ID (prevents JS string literal bugs)
     const getActiveSession = () => {
@@ -64,6 +69,7 @@ export const useSimulationSocket = (
             if (action === "start") {
                 setResult(null);
                 setProgress(null);
+                setLossHistory([]);
                 setStatusMessage("");
             }
 
@@ -111,13 +117,26 @@ export const useSimulationSocket = (
                             loss: res.loss,
                             eta: res.eta,
                         });
+                        setLossHistory((prev) => {
+                            if (
+                                prev.length > 0 &&
+                                prev[prev.length - 1].epoch === res.epoch
+                            ) {
+                                return prev;
+                            }
+                            return [
+                                ...prev,
+                                { epoch: res.epoch, loss: res.loss },
+                            ];
+                        });
                         break;
-                    case "success":
-                        const successData = {
+                    case "success": {
+                        const successData: SimulationResponse = {
                             data_hash: res.data_hash,
                             model_hash: res.model_hash,
                             eval_hash: res.eval_hash,
                             image_url: res.image_url,
+                            eval_data: res.eval_data,
                         };
                         setResult(successData);
                         setIsLoading(false);
@@ -130,6 +149,7 @@ export const useSimulationSocket = (
                             promiseRef.current = null;
                         }
                         break;
+                    }
                     case "error":
                         setError(res.message);
                         setIsLoading(false);
@@ -209,6 +229,7 @@ export const useSimulationSocket = (
         setResult(null);
         setError(null);
         setProgress(null);
+        setLossHistory([]);
         setStatusMessage("");
     }, []);
 
@@ -218,6 +239,7 @@ export const useSimulationSocket = (
         result,
         statusMessage,
         progress,
+        lossHistory,
         startSimulation,
         abortSimulation,
         clearResult,

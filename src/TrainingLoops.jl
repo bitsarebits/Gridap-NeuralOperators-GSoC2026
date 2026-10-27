@@ -46,7 +46,7 @@ end
 """
     train_deeponet!(train_state, dataloader, x_data_dev, lr_scheduler; epochs=5000, log_cb)
 
-Executes the training loop for the DeepONet model.
+Executes the training loop for the DeepONet model and records loss history..
 Uses mini-batching over the parameter space (Branch input), while keeping the
 spatial-temporal grid (Trunk input) constant.
 
@@ -79,6 +79,8 @@ function train_deeponet!(
 
     t_start = time()
     t_start_fast = time()
+    loss_history = Dict{String,Float32}[]
+    log_interval = max(1, min(100, div(epochs, 50)))
 
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
@@ -106,19 +108,31 @@ function train_deeponet!(
                 comp_mins = round((t_compiled - t_start) / 60, digits=2)
                 t_start_fast = time() # Reset timer to avoid skewing ETA with compilation time
 
+                push!(loss_history, Dict("epoch" => Float32(epoch), "loss" => Float32(current_loss)))
                 msg = "Compilation finished in $comp_mins min. Fast training started."
                 println(msg)
                 log_cb(Dict("type" => "status", "stage" => msg))
-                println("Epoch: $epoch \t Loss: $(Float32(current_loss))")
-
-            elseif epoch % 500 == 0
+                log_cb(Dict(
+                    "type" => "progress",
+                    "stage" => "Training DeepONet",
+                    "epoch" => epoch,
+                    "total_epochs" => epochs,
+                    "loss" => current_loss,
+                    "eta" => 0.0
+                ))
+            elseif epoch % log_interval == 0 || epoch == epochs
                 elapsed_fast = time() - t_start_fast
                 time_per_epoch = elapsed_fast / (epoch - 1)
                 epochs_left = epochs - epoch
                 eta_seconds = time_per_epoch * epochs_left
 
-                eta_str = format_eta(eta_seconds)
-                println("Epoch: $epoch \t Loss: $(Float32(current_loss)) \t ETA: $eta_str")
+                push!(loss_history, Dict("epoch" => Float32(epoch), "loss" => Float32(current_loss)))
+
+                if epoch % 500 == 0 || epoch == epochs
+                    eta_str = format_eta(eta_seconds)
+                    println("Epoch: $epoch \t Loss: $(Float32(current_loss)) \t ETA: $eta_str")
+                end
+
                 log_cb(Dict(
                     "type" => "progress",
                     "stage" => "Training DeepONet",
@@ -133,13 +147,13 @@ function train_deeponet!(
 
     total_mins = round((time() - t_start) / 60, digits=2)
     println("--- Training Completed in $total_mins minutes ---")
-    return train_state.parameters, train_state.states
+    return train_state.parameters, train_state.states, loss_history
 end
 
 """
     train_fno!(train_state, dataloader, lr_scheduler; epochs=10000, log_cb)
 
-Executes the mini-batch training loop for the FNO model over the parameter space `N_sigma`.
+Executes the mini-batch training loop for the FNO model over the parameter space `N_sigma`and records loss history.
 
 # Arguments
 - `train_state`: Already initialized `TrainState`.
@@ -160,6 +174,8 @@ function train_fno!(
 
     t_start = time()
     t_start_fast = time()
+    loss_history = Dict{String,Float32}[]
+    log_interval = max(1, min(100, div(epochs, 50)))
 
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
@@ -187,19 +203,30 @@ function train_fno!(
                 comp_mins = round((t_compiled - t_start) / 60, digits=2)
                 t_start_fast = time()
 
+                push!(loss_history, Dict("epoch" => Float32(epoch), "loss" => Float32(current_loss)))
                 msg = "Compilation finished in $comp_mins min. Fast training started."
                 println(msg)
                 log_cb(Dict("type" => "status", "stage" => msg))
-                println("Epoch: $epoch \t Loss: $(Float32(current_loss))")
-
-            elseif epoch % 500 == 0
+                log_cb(Dict(
+                    "type" => "progress",
+                    "stage" => "Training FNO",
+                    "epoch" => epoch,
+                    "total_epochs" => epochs,
+                    "loss" => current_loss,
+                    "eta" => 0.0
+                ))
+            elseif epoch % log_interval == 0 || epoch == epochs
                 elapsed_fast = time() - t_start_fast
                 time_per_epoch = elapsed_fast / (epoch - 1)
                 epochs_left = epochs - epoch
                 eta_seconds = time_per_epoch * epochs_left
 
-                eta_str = format_eta(eta_seconds)
-                println("Epoch: $epoch \t Loss: $current_loss\t ETA: $eta_str")
+                push!(loss_history, Dict("epoch" => Float32(epoch), "loss" => Float32(current_loss)))
+
+                if epoch % 500 == 0 || epoch == epochs
+                    eta_str = format_eta(eta_seconds)
+                    println("Epoch: $epoch \t Loss: $current_loss\t ETA: $eta_str")
+                end
 
                 log_cb(Dict(
                     "type" => "progress",
@@ -215,13 +242,13 @@ function train_fno!(
 
     total_mins = round((time() - t_start) / 60, digits=2)
     println("--- FNO Training Completed in $total_mins minutes ---")
-    return train_state.parameters, train_state.states
+    return train_state.parameters, train_state.states, loss_history
 end
 
 """
     train_nomad!(train_state, dataloader, lr_scheduler; epochs=10000, log_cb)
 
-Executes the mini-batch training loop for NOMAD on the Reactant device.
+Executes the mini-batch training loop for NOMAD on the Reactant device and records loss history..
 Because of coordinate flattening, this process is generally more batch-heavy.
 
 # Arguments
@@ -238,11 +265,12 @@ function train_nomad!(
     log_cb=(x)->nothing
 )
     println("--- Starting NOMAD Training on Reactant Device ---")
-    println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
     log_cb(Dict("type" => "status", "stage" => "XLA JIT Compilation running (may take a few minutes)..."))
 
     t_start = time()
     t_start_fast = time()
+    loss_history = Dict{String,Float32}[]
+    log_interval = max(1, min(100, div(epochs, 50)))
 
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
@@ -251,7 +279,6 @@ function train_nomad!(
             for batch in dataloader
                 # Yield allows Julia to catch InterruptException thrown by the WebSocket
                 yield()
-
                 batch_dev = (
                     (batch[1][1] |> XDEV, batch[1][2] |> XDEV),
                     batch[2] |> XDEV
@@ -270,19 +297,31 @@ function train_nomad!(
                 t_compiled = time()
                 comp_mins = round((t_compiled - t_start) / 60, digits=2)
                 t_start_fast = time()
+
+                push!(loss_history, Dict("epoch" => Float32(epoch), "loss" => Float32(current_loss)))
                 msg = "Compilation finished in $comp_mins min. Fast training started."
                 println(msg)
                 log_cb(Dict("type" => "status", "stage" => msg))
-                println("Epoch: $epoch \t Loss: $(Float32(current_loss))")
-
-            elseif epoch % 500 == 0
+                log_cb(Dict(
+                    "type" => "progress",
+                    "stage" => "Training NOMAD",
+                    "epoch" => epoch,
+                    "total_epochs" => epochs,
+                    "loss" => current_loss,
+                    "eta" => 0.0
+                ))
+            elseif epoch % log_interval == 0 || epoch == epochs
                 elapsed_fast = time() - t_start_fast
                 time_per_epoch = elapsed_fast / (epoch - 1)
                 epochs_left = epochs - epoch
                 eta_seconds = time_per_epoch * epochs_left
 
-                eta_str = format_eta(eta_seconds)
-                println("Epoch: $epoch \t Loss: $current_loss \t ETA: $eta_str")
+                push!(loss_history, Dict("epoch" => Float32(epoch), "loss" => Float32(current_loss)))
+
+                if epoch % 500 == 0 || epoch == epochs
+                    eta_str = format_eta(eta_seconds)
+                    println("Epoch: $epoch \t Loss: $current_loss \t ETA: $eta_str")
+                end
 
                 log_cb(Dict(
                     "type" => "progress",
@@ -298,9 +337,8 @@ function train_nomad!(
 
     total_mins = round((time() - t_start) / 60, digits=2)
     println("--- NOMAD Training Completed in $total_mins minutes ---")
-    return train_state.parameters, train_state.states
+    return train_state.parameters, train_state.states, loss_history
 end
-
 
 # ================= SPECIALIZED DISPATCH =================
 
@@ -425,12 +463,12 @@ function prepare_and_train(
     train_state = Training.TrainState(deepONet, ps, st, opt)
 
     # @time shows how long the compilation + execution took
-    @time ps_trained, st_trained = train_deeponet!(
+    @time ps_trained, st_trained, loss_history = train_deeponet!(
         train_state, dataloader, x_data_dev, lr_scheduler;
         epochs=n_epochs, log_cb=log_cb
     )
 
-    return ps_trained |> CDEV, st_trained |> CDEV, Float32(max_u)
+    return ps_trained |> CDEV, st_trained |> CDEV, Float32(max_u), loss_history
 end
 
 """
@@ -529,12 +567,12 @@ function prepare_and_train(
     opt = Adam(0.001f0)
     train_state = Training.TrainState(fno, ps, st, opt)
 
-    @time ps_trained, st_trained = train_fno!(
+    @time ps_trained, st_trained, loss_history = train_fno!(
         train_state, dataloader, lr_scheduler;
         epochs=n_epochs, log_cb=log_cb
     )
 
-    return ps_trained |> CDEV, st_trained |> CDEV, Float32(max_u)
+    return ps_trained |> CDEV, st_trained |> CDEV, Float32(max_u), loss_history
 end
 
 """
@@ -645,11 +683,11 @@ function prepare_and_train(
     opt = Adam(0.001f0)
     train_state = Training.TrainState(nomad_net, ps, st, opt)
 
-    @time ps_trained, st_trained = train_nomad!(
+    @time ps_trained, st_trained, loss_history = train_nomad!(
         train_state, dataloader, lr_scheduler; epochs=n_epochs, log_cb=log_cb
     )
 
-    return ps_trained |> CDEV, st_trained |> CDEV, Float32(max_u)
+    return ps_trained |> CDEV, st_trained |> CDEV, Float32(max_u), loss_history
 end
 
 end # module

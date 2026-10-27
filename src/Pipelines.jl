@@ -1,19 +1,67 @@
 module Pipelines
 
-using DrWatson, JLD2, AlgebraOfGraphics, CairoMakie, Gridap
+using DrWatson, JLD2, JSON3, Statistics, Gridap
 
 # Custom modules
 using ..TrainingLoops, ..Solvers, ..DataGeneration, ..HashRegistry, ..Inference, ..Utils, ..LRSchedulers
 
 export execute_train_pipeline, execute_plot_pipeline
 
+# Increment this when evaluation metrics or timing semantics change. Including it
+# in the evaluation hash prevents stale cached reports from being reused.
+const EVALUATION_BENCHMARK_VERSION = 2
+
+"""Linearly interpolate a spatial-by-time prediction matrix onto a target time grid."""
+function interpolate_time_grid(
+    u_pred::AbstractMatrix,
+    t_source::AbstractVector,
+    t_target::AbstractVector,
+)
+    size(u_pred, 2) == length(t_source) ||
+        throw(ArgumentError("Prediction columns must match the source time grid."))
+    if length(t_source) == 1
+        length(t_target) == 1 && return Float64.(u_pred)
+        throw(ArgumentError("At least two prediction time points are required for interpolation."))
+    end
+    all(diff(t_source) .> 0) ||
+        throw(ArgumentError("Prediction time grid must be strictly increasing."))
+
+    tolerance = 1e-10 * max(1.0, abs(Float64(first(t_source))), abs(Float64(last(t_source))))
+    (minimum(t_target) >= first(t_source) - tolerance &&
+     maximum(t_target) <= last(t_source) + tolerance) ||
+        throw(ArgumentError("Prediction time grid does not cover the full FEM evaluation grid."))
+
+    result = Matrix{Float64}(undef, size(u_pred, 1), length(t_target))
+    source_times = Float64.(t_source)
+    target_times = Float64.(t_target)
+    source_values = Float64.(u_pred)
+
+    for (j, t) in enumerate(target_times)
+        if t <= source_times[1]
+            result[:, j] .= source_values[:, 1]
+        elseif t >= source_times[end]
+            result[:, j] .= source_values[:, end]
+        else
+            left = searchsortedlast(source_times, t)
+            if source_times[left] == t
+                result[:, j] .= source_values[:, left]
+            else
+                right = left + 1
+                weight = (t - source_times[left]) / (source_times[right] - source_times[left])
+                result[:, j] .= source_values[:, left] .+
+                    weight .* (source_values[:, right] .- source_values[:, left])
+            end
+        end
+    end
+
+    return result
+end
+
 """
-    execute_train_pipeline(solver::AbstractNeuralSolver, data_hash::String)
+    execute_train_pipeline(solver::AbstractNeuralSolver, data_hash::String; log_cb)
 
-Internal core function. Handles cache validation, loading the High-Fidelity dataset,
-triggering the specialized training dispatch (via `prepare_and_train`), and saving
-the resulting weights to disk.
-
+Handles cache validation, loading the High-Fidelity dataset, triggering the specialized
+training dispatch (via `prepare_and_train`), and saving the resulting weights and loss history to disk.
 # Arguments
 - `solver`: An instance of a concrete neural solver type (e.g., `DeepONetSolver()`).
 - `data_hash::String`: The unique hash identifier of the source FEM dataset.
@@ -55,15 +103,15 @@ function execute_train_pipeline(
         # Verify specific structural fields based on the solver type (using safe 'get' to prevent KeyError on older registries)
         if solver isa DeepONetSolver || solver isa NOMADSolver
             if get(parent_solver, "m_sensors", 100) != solver.m_sensors ||
-               get(parent_solver, "p_latent", 64) != solver.p_latent ||
-               get(parent_solver, "hidden", 64) != solver.hidden ||
-               get(parent_solver, "step_x", 10) != solver.step_x ||
-               get(parent_solver, "step_t", 5) != solver.step_t
+                get(parent_solver, "p_latent", 64) != solver.p_latent ||
+                get(parent_solver, "hidden", 64) != solver.hidden ||
+                get(parent_solver, "step_x", 10) != solver.step_x ||
+                get(parent_solver, "step_t", 5) != solver.step_t
                 error("Architecture mismatch! m_sensors, p_latent, hidden, step_x and step_t must exactly match the pre-trained model.")
             end
         elseif solver isa FNOSolver
             if get(parent_solver, "nx_red", 256) != solver.nx_red ||
-               get(parent_solver, "nt_red", 50) != solver.nt_red
+                get(parent_solver, "nt_red", 50) != solver.nt_red
                 error("Architecture mismatch! FNO grid resolution (nx_red, nt_red) must exactly match the pre-trained model.")
             end
         end
@@ -102,13 +150,19 @@ function execute_train_pipeline(
 
     # Delegate to specialized Dispatch
     log_cb(Dict("type" => "status", "stage" => "Formatting tensors and moving to XLA Device..."))
-    ps_cpu, st_cpu, max_u = prepare_and_train(solver, fem_data, lr_scheduler; log_cb=log_cb)
+    ps_cpu, st_cpu, max_u, loss_history = prepare_and_train(solver, fem_data, lr_scheduler; log_cb=log_cb)
 
     # Save Model Weights and Update Registry
     log_cb(Dict("type" => "status", "stage" => "Saving trained weights to disk..."))
     mkpath(datadir("models", lowercase(solver_name)))
-    jldsave(weights_path; ps=ps_cpu, st=st_cpu, max_u=max_u)
-    HashRegistry.update_registry!("models", model_hash, config_dict)
+    jldsave(weights_path; ps=ps_cpu, st=st_cpu, max_u=max_u, loss_history=loss_history)
+
+    # Store the scheduler's concrete type as display metadata. Keep this field out
+    # of `config_dict` used for hashing so existing model hashes remain stable.
+    registry_config = deepcopy(config_dict)
+    registry_config["solver"]["lr_scheduler"]["type"] =
+        string(nameof(typeof(solver.lr_scheduler)))
+    HashRegistry.update_registry!("models", model_hash, registry_config)
 
     println("Model weights saved to $weights_path")
     println("$(solver_name) integration script finished successfully")
@@ -117,11 +171,10 @@ function execute_train_pipeline(
 end
 
 """
-    execute_plot_pipeline(solver::AbstractNeuralSolver, model_hash::String, eval_config::EvalConfig)
+    execute_plot_pipeline(solver::AbstractNeuralSolver, model_hash::String, eval_config::EvalConfig; log_cb)
 
-Internal core function. Handles registry validation, executing the High-Fidelity
-FEM solver for benchmarking, triggering the model-specific inference dispatch,
-and generating the comparative AlgebraOfGraphics plots.
+Executes zero-shot evaluation across the entire spatio-temporal grid, computes time-resolved
+and global error metrics, and serializes the interactive evaluation payload to JSON.
 
 # Arguments
 - `solver`: An instance of a concrete neural solver type (e.g., `DeepONetSolver()`).
@@ -146,15 +199,15 @@ function execute_plot_pipeline(
 
     config_dict = Dict(
         "model_hash" => model_hash,
-        "eval_config" => HashRegistry.struct_to_dict(eval_config)
+        "eval_config" => HashRegistry.struct_to_dict(eval_config),
+        "benchmark_version" => EVALUATION_BENCHMARK_VERSION,
     )
 
-    # Cache check
     eval_hash = HashRegistry.config_hash(config_dict)
-    save_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).png")
+    save_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).json")
 
     if HashRegistry.check_registry("evaluations", eval_hash) && isfile(save_path)
-        msg = "Plot already exists for Hash: [$eval_hash]. Skipping evaluation."
+        msg = "Interactive evaluation already exists for Hash: [$eval_hash]. Skipping evaluation."
         println(msg)
         log_cb(Dict("type" => "status", "stage" => msg))
         return eval_hash
@@ -189,11 +242,17 @@ function execute_plot_pipeline(
     _ = DataGeneration.generate_fem_snapshots([[sigma_test]], fem_config)
 
     log_cb(Dict("type" => "status", "stage" => "Computing High-Fidelity FEM benchmark for σ = $sigma_test..."))
-    println("\nBENCHMARK PHASE: Measuring pure FEM execution time...")
+    println("\nBENCHMARK PHASE: Measuring FEM execution time (5 repetitions)...")
     println("Generating High-Fidelity FEM solution for σ = $sigma_test...")
-    t_fem = @elapsed begin
-        hf_results = DataGeneration.generate_fem_snapshots([[sigma_test]], fem_config)
+    fem_timings = Float64[]
+    hf_results = nothing
+    for _ in 1:5
+        elapsed = @elapsed begin
+            hf_results = DataGeneration.generate_fem_snapshots([[sigma_test]], fem_config)
+        end
+        push!(fem_timings, elapsed)
     end
+    t_fem = median(fem_timings)
     x_hf_raw = hf_results.snapshots[:, 1, :]
 
     # Specialized Neural Inference Dispatch
@@ -202,101 +261,95 @@ function execute_plot_pipeline(
         solver, weights_data, fem_data, sigma_test
     )
 
+    # Compute the ratio from unrounded measurements; round only for display.
+    speedup = round(t_fem / max(t_nn, eps(Float64)), digits=2)
+
     println("\n=== BENCHMARK RESULTS (σ = $sigma_test) ===")
     println("FEM Computation Time:  $(round(t_fem, digits=4)) seconds")
     println("$solver_name Inference:    $(round(t_nn, digits=4)) seconds")
-    println("Speedup Factor:        $(round(t_fem / max(t_nn, 1e-6), digits=1))x")
+    println("Speedup Factor:        $(speedup)x")
     println("====================================\n")
 
     # Plotting Generation
-    log_cb(Dict("type" => "status", "stage" => "Generating comparative plots and computing errors..."))
-    println("Preparing the plot...")
+    log_cb(Dict("type" => "status", "stage" => "Computing full spatio-temporal metrics and serializing interactive payload..."))
 
-    N_t_plot = length(t_grid_pred)
-    t_indices = [1, div(N_t_plot, 2), N_t_plot]
+    x_grid = Float32.(fem_data["x_grid"])
+    t_grid_eval = Float64.(fem_data["t_grid"])
+    N_x = length(x_grid)
+    N_t_plot = length(t_grid_eval)
 
-    # figure generation
-    fig = Figure(; size=(1200, 800))
+    # Evaluate every architecture on the same full FEM time grid. FNO predicts
+    # only nt_red snapshots, so interpolate its prediction in time before scoring.
+    u_pred_eval = interpolate_time_grid(u_pred_matrix, t_grid_pred, t_grid_eval)
 
-    # Title creation
-    speedup = round(t_fem / max(t_nn, 1e-6), digits=1)
-    fig_title = "$solver_name vs High-Fidelity FEM (Zero-Shot) | σ = $sigma_test | Grid: $(length(fem_data["x_grid"])) × $(N_t_plot) | Speedup: $(speedup)x"
-    Label(fig[0, 1:3], fig_title, fontsize=24, font=:bold)
+    # Keep full precision for metrics; round only the display tensors/curves below.
+    u_true_slices = Vector{Vector{Float32}}(undef, N_t_plot)
+    u_pred_slices = Vector{Vector{Float32}}(undef, N_t_plot)
+    rel_l2_t_raw = zeros(Float64, N_t_plot)
+    linf_t_raw = zeros(Float64, N_t_plot)
 
-    # Lists for the axis
-    axs_top = Axis[]
-    axs_bot = Axis[]
+    for k in 1:N_t_plot
+        u_t_raw = Float64.(x_hf_raw[:, k])
+        u_p_raw = Float64.(vec(u_pred_eval[:, k]))
+        diff_raw = u_p_raw .- u_t_raw
 
-    for (i, idx) in enumerate(t_indices)
-        t_val = t_grid_pred[idx]
+        l2_err = sqrt(mean(abs2, diff_raw))
+        denom = max(sqrt(mean(abs2, u_t_raw)), 1e-8)
+        rel_l2_t_raw[k] = (l2_err / denom) * 100.0
+        linf_t_raw[k] = maximum(abs, diff_raw)
 
-        # mapping to find the closest HF frame
-        idx_true = argmin(abs.(fem_data["t_grid"] .- t_val))
-        u_true = Float32.(x_hf_raw[:, idx_true])
-        u_pred = vec(u_pred_matrix[:, idx])
-
-        # Errors
-        abs_err = abs.(u_pred .- u_true)
-        l2_error = sqrt(mean(abs2, u_pred .- u_true))
-        rel_error = (l2_error / max(sqrt(mean(abs2, u_true)), 1e-8)) * 100
-
-        text_label = "t = $(round(t_val, digits=2))\n(Err: $(round(rel_error, digits=2))%)"
-
-        # first row (u_true vs u_pred)
-        ax_top = Axis(fig[1, i],
-            title=text_label, titlesize=18,
-            ylabel=i == 1 ? L"u(x, t)" : "",
-            ylabelsize=22, xticklabelsize=16, yticklabelsize=16
-        )
-        push!(axs_top, ax_top)
-
-        lines!(ax_top, fem_data["x_grid"], u_true, label="High-Fidelity", color=:orange, linewidth=4)
-        lines!(ax_top, fem_data["x_grid"], u_pred, label=solver_name, color=:blue, linestyle=:dash, linewidth=4)
-
-        if i > 1
-            hideydecorations!(ax_top, grid=false)
-        end
-
-        # Second row (error)
-        ax_bot = Axis(fig[2, i],
-            xlabel=L"x",
-            ylabel=i == 1 ? L"|u_{\text{pred}} - u_{\text{HF}}|" : "",
-            xlabelsize=22, ylabelsize=22, xticklabelsize=16, yticklabelsize=16
-        )
-        push!(axs_bot, ax_bot)
-
-        lines!(ax_bot, fem_data["x_grid"], abs_err, color=:green, linewidth=4)
-
-        if i > 1
-            hideydecorations!(ax_bot, grid=false)
-        end
+        u_true_slices[k] = round.(Float32.(u_t_raw), digits=5)
+        u_pred_slices[k] = round.(Float32.(u_p_raw), digits=5)
     end
 
-    # Axes syncronization
-    linkyaxes!(axs_top...)
-    linkyaxes!(axs_bot...)
-    linkxaxes!(axs_top..., axs_bot...)
+    mean_rel_l2 = mean(rel_l2_t_raw)
+    max_rel_l2 = maximum(rel_l2_t_raw)
+    worst_t_idx = Int(argmax(rel_l2_t_raw)) - 1 # 0-based index for JS frontend
+    global_linf = maximum(linf_t_raw)
 
-    #= Hide x axe on the first row
-    for ax in axs_top
-        hidexdecorations!(ax, grid=false)
-    end=#
+    loss_history = get(weights_data, "loss_history", Dict{String,Float32}[])
 
-    # Add legends
-    axislegend(axs_top[1], position=:lt, labelsize=18)
+    eval_payload = Dict(
+        "eval_hash" => eval_hash,
+        "benchmark_version" => EVALUATION_BENCHMARK_VERSION,
+        "model_hash" => model_hash,
+        "data_hash" => data_hash,
+        "solver_name" => replace(solver_name, "Solver" => ""),
+        "x_grid" => round.(x_grid, digits=5),
+        "t_grid" => round.(Float32.(t_grid_eval), digits=5),
+        "u_true" => u_true_slices,
+        "u_pred" => u_pred_slices,
+        "rel_l2_t" => round.(rel_l2_t_raw, digits=4),
+        "linf_t" => round.(linf_t_raw, digits=5),
+        "loss_history" => loss_history,
+        "benchmark_protocol" => Dict(
+            "version" => EVALUATION_BENCHMARK_VERSION,
+            "fem_timing" => "Median of 5 FEM runs after one compilation warm-up.",
+            "inference_timing" => "Median of 5 synchronous model forward passes; excludes compilation and host/device transfers.",
+            "evaluation_time_grid" => "Full FEM time grid; linearly interpolated when the model predicts on a reduced time grid.",
+        ),
+        "metrics" => Dict(
+            "t_fem" => t_fem,
+            "t_nn" => t_nn,
+            "speedup" => speedup,
+            "mean_rel_l2" => mean_rel_l2,
+            "max_rel_l2" => max_rel_l2,
+            "worst_t_idx" => worst_t_idx,
+            "linf_error" => global_linf,
+            "nx" => N_x,
+            "nt" => N_t_plot,
+            "sigma_test" => sigma_test
+        )
+    )
 
-    # Layout and spaces
-    rowgap!(fig.layout, 1, 15) # Space under the title
-    rowgap!(fig.layout, 2, 10)
-    colgap!(fig.layout, 15)
-
-    # Storing
     mkpath(plotsdir(lowercase(solver_name)))
-    save(save_path, fig)
+    open(save_path, "w") do io
+        JSON3.write(io, eval_payload)
+    end
     HashRegistry.update_registry!("evaluations", eval_hash, config_dict)
 
-    log_cb(Dict("type" => "status", "stage" => "Evaluation successful! Plot saved."))
-    println("Evaluation successful! Plot saved to: $save_path")
+    log_cb(Dict("type" => "status", "stage" => "Evaluation successful! Interactive data ready."))
+    println("Evaluation successful! Interactive JSON saved to: $save_path")
 
     return eval_hash
 end

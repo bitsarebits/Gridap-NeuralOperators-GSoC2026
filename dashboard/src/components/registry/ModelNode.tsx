@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import ConfigGrid, { FORBIDDEN_KEYS } from "../ui/ConfigGrid";
 import EvaluationNode from "./EvaluationNode";
-import type { RegistryData, SyncPayload } from "../../types";
+import type { ArenaCandidate, RegistryData, SyncPayload } from "../../types";
 import DeleteButton from "../ui/DeleteButton";
 import { useQueryClient } from "@tanstack/react-query";
 import { syncExperimentLocally } from "../../api";
@@ -30,12 +30,48 @@ interface Props {
         solverConfig: any,
         femConfig: any,
     ) => void;
+    selectedArenaHashes?: Set<string>;
+    referenceArenaCandidate?: ArenaCandidate | null;
+    onToggleArena?: (c: ArenaCandidate) => void;
 }
 
 // Intercepts the raw Julia string and converts it into a clean object
 const parseSchedulerString = (sched: any) => {
     if (!sched) return null;
-    if (typeof sched === "object") return sched; // Already parsed
+    if (typeof sched === "object") {
+        const rawType = String(sched.type ?? "");
+
+        if (
+            rawType === "CosineAnnealing" ||
+            rawType === "Cosine" ||
+            sched.lr_max !== undefined ||
+            sched.max_epochs !== undefined
+        ) {
+            // Keep only reproducibility-relevant configuration, not runtime state.
+            return {
+                type: "Cosine",
+                lr_max: sched.lr_max,
+                lr_min: sched.lr_min,
+                max_epochs: sched.max_epochs,
+            };
+        }
+        if (
+            rawType === "ReduceLROnPlateau" ||
+            rawType === "Plateau" ||
+            sched.patience !== undefined ||
+            sched.current_lr !== undefined ||
+            sched.start_lr !== undefined
+        ) {
+            return {
+                type: "Plateau",
+                start_lr: sched.start_lr ?? sched.current_lr,
+                min_lr: sched.min_lr,
+                factor: sched.factor,
+                patience: sched.patience,
+            };
+        }
+        return sched;
+    }
 
     const schedStr = String(sched);
     if (schedStr.includes("CosineAnnealing")) {
@@ -73,6 +109,9 @@ export default function ModelNode({
     registry,
     serverIsConnected,
     onFineTune,
+    selectedArenaHashes,
+    onToggleArena,
+    referenceArenaCandidate,
 }: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
 
@@ -108,7 +147,16 @@ export default function ModelNode({
     delete sanitizedSolver.scheduler_info;
 
     if (parsedScheduler && typeof parsedScheduler === "object") {
-        sanitizedSolver.Learning_Rate_Schedule = parsedScheduler;
+        const { type: schedulerKind, ...schedulerParams } = parsedScheduler;
+        sanitizedSolver.Learning_Rate_Schedule = {
+            ...schedulerParams,
+            scheduler_name:
+                schedulerKind === "Cosine"
+                    ? "Cosine Annealing"
+                    : schedulerKind === "Plateau"
+                      ? "ReduceLROnPlateau"
+                      : "Unknown",
+        };
     }
 
     const buildCompactModelString = () => {
@@ -373,6 +421,13 @@ export default function ModelNode({
                                 solverType={solverType}
                                 serverIsConnected={serverIsConnected}
                                 registry={registry}
+                                isSelectedForArena={selectedArenaHashes?.has(
+                                    evalHash,
+                                )}
+                                onToggleArena={onToggleArena}
+                                referenceArenaCandidate={
+                                    referenceArenaCandidate
+                                }
                             />
                         ))
                     )}

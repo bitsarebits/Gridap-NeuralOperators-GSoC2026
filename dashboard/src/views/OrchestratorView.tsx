@@ -27,6 +27,7 @@ import CacheBadge from "../components/ui/CacheBadge";
 import { useServerCache } from "../hooks/useServerCache";
 import { useSimulationSocket } from "../hooks/useSimulationWebSocket";
 import { useEffect } from "react";
+import PlotlyChart from "../components/ui/PlotlyChart";
 
 // Helper: Build the payload
 const buildPayload = (data: SimulationFormValues): SimulationPayload => {
@@ -129,6 +130,7 @@ export default function OrchestratorView({
         result,
         statusMessage,
         progress,
+        lossHistory,
         startSimulation,
         abortSimulation,
         clearResult,
@@ -254,13 +256,13 @@ export default function OrchestratorView({
                                         )}
                                     </div>
                                     {progress && (
-                                        <div className="space-y-1.5 animate-in fade-in duration-300">
+                                        <div className="space-y-3 animate-in fade-in duration-300">
                                             <div className="flex justify-between text-xs text-slate-500 font-medium px-1">
                                                 <span>
                                                     Epoch: {progress.epoch} /{" "}
                                                     {progress.total}
                                                 </span>
-                                                <span className="tabular-nums">
+                                                <span className="tabular-nums font-mono">
                                                     Loss:{" "}
                                                     {progress.loss.toExponential(
                                                         4,
@@ -275,6 +277,73 @@ export default function OrchestratorView({
                                                     }}
                                                 ></div>
                                             </div>
+
+                                            {/* Real-Time Loss Convergence Chart */}
+                                            {lossHistory.length > 1 && (
+                                                <div className="h-44 w-full bg-white border border-slate-200 rounded-lg p-2">
+                                                    <PlotlyChart
+                                                        data={[
+                                                            {
+                                                                x: lossHistory.map(
+                                                                    (p) =>
+                                                                        p.epoch,
+                                                                ),
+                                                                y: lossHistory.map(
+                                                                    (p) =>
+                                                                        p.loss,
+                                                                ),
+                                                                type: "scatter",
+                                                                mode: "lines",
+                                                                name: "Loss",
+                                                                line: {
+                                                                    color: "#2563eb",
+                                                                    width: 2,
+                                                                },
+                                                            },
+                                                        ]}
+                                                        layout={{
+                                                            margin: {
+                                                                l: 55,
+                                                                r: 15,
+                                                                t: 10,
+                                                                b: 30,
+                                                            },
+                                                            xaxis: {
+                                                                title: {
+                                                                    text: "Epoch",
+                                                                    font: {
+                                                                        size: 10,
+                                                                    },
+                                                                },
+                                                                tickfont: {
+                                                                    size: 10,
+                                                                },
+                                                            },
+                                                            yaxis: {
+                                                                title: {
+                                                                    text: "MSE Loss (log)",
+                                                                    font: {
+                                                                        size: 10,
+                                                                    },
+                                                                },
+                                                                type: "log",
+                                                                exponentformat:
+                                                                    "e",
+                                                                tickfont: {
+                                                                    size: 10,
+                                                                },
+                                                            },
+                                                            paper_bgcolor:
+                                                                "transparent",
+                                                            plot_bgcolor:
+                                                                "#ffffff",
+                                                        }}
+                                                        config={{
+                                                            displayModeBar: false,
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -337,9 +406,10 @@ export default function OrchestratorView({
             </div>
 
             {/* Results */}
-            {result && result.eval_hash && result.image_url && !isLoading && (
-                <Results result={result} onReset={clearResult} />
-            )}
+            {result &&
+                result.eval_hash &&
+                (result.eval_data || result.image_url) &&
+                !isLoading && <Results result={result} onReset={clearResult} />}
         </div>
     );
 }

@@ -71,6 +71,51 @@ export interface SimulationPayload {
     scheduler: CosineSchedulerPayload | PlateauSchedulerPayload;
 }
 
+export interface LossPoint {
+    epoch: number;
+    loss: number;
+}
+
+export interface EvaluationMetrics {
+    t_fem: number;
+    t_nn: number;
+    speedup: number;
+    mean_rel_l2: number;
+    max_rel_l2: number;
+    worst_t_idx: number;
+    linf_error: number;
+    nx: number;
+    nt: number;
+    sigma_test: number;
+}
+
+export interface InteractiveEvalData {
+    // Absent on legacy evaluations produced before the benchmark protocol was versioned.
+    benchmark_version?: number;
+    eval_hash: string;
+    model_hash: string;
+    data_hash: string;
+    solver_name: string;
+    x_grid: number[];
+    t_grid: number[];
+    u_true: number[][]; // Indexed as u_true[tIdx][xIdx]
+    u_pred: number[][]; // Indexed as u_pred[tIdx][xIdx]
+    rel_l2_t: number[];
+    linf_t: number[];
+    loss_history?: LossPoint[];
+    metrics: EvaluationMetrics;
+}
+
+export interface ArenaCandidate {
+    evalHash: string;
+    modelHash: string;
+    dataHash: string;
+    solverType: string;
+    sigmaTest: number | string;
+    evalUrl?: string;
+    isLocal: boolean;
+}
+
 // Julia Response
 export interface SimulationResponse {
     message?: string;
@@ -78,6 +123,7 @@ export interface SimulationResponse {
     model_hash?: string;
     eval_hash?: string;
     image_url?: string;
+    eval_data?: InteractiveEvalData;
 }
 
 export interface CacheCheckResponse {
@@ -89,9 +135,9 @@ export interface CacheCheckResponse {
 }
 
 export interface RegistryData {
-    data: Record<string, any>; // FEM configurations mapped by data_hash
-    models: Record<string, any>; // Model configurations mapped by model_hash
-    evaluations: Record<string, any>; // Evaluations mapped by eval_hash
+    data: Record<string, any>;
+    models: Record<string, any>;
+    evaluations: Record<string, any>;
 }
 
 export interface RegistryResponse {
@@ -103,6 +149,7 @@ export interface RegistryResponse {
 export interface PlotResponse {
     status: "success" | "error";
     image_url?: string;
+    eval_data?: InteractiveEvalData;
     message?: string;
 }
 
@@ -133,4 +180,5 @@ export interface SyncPayload {
     data_url?: string;
     model_url?: string;
     image_url?: string;
+    eval_url?: string;
 }
