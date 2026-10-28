@@ -113,15 +113,15 @@ export default function DatasetNode({
         <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden transition-all">
             <div
                 onClick={() => setIsExpanded(!isExpanded)}
-                className={`p-5 flex items-center justify-between cursor-pointer transition-colors select-none ${isExpanded ? "bg-slate-50/70 border-b border-slate-100" : "hover:bg-slate-50/40"}`}
+                className={`p-3.5 sm:p-5 flex items-start sm:items-center justify-between gap-2.5 sm:gap-4 cursor-pointer transition-colors select-none ${isExpanded ? "bg-slate-50/70 border-b border-slate-100" : "hover:bg-slate-50/40"}`}
             >
-                <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 text-emerald-600 shrink-0">
+                <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                    <div className="p-2 sm:p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 text-emerald-600 shrink-0 mt-0.5 sm:mt-0">
                         <Database size={20} />
                     </div>
                     <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-slate-800">
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                            <span className="font-bold text-sm sm:text-base text-slate-800">
                                 FEM Snapshots Dataset
                             </span>
                             {isShared && (
@@ -143,8 +143,8 @@ export default function DatasetNode({
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
+                <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 mt-0.5 sm:mt-0">
+                    <span className="text-[11px] sm:text-xs font-bold px-2 sm:px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
                         {linkedModels.length}{" "}
                         {linkedModels.length === 1 ? "Model" : "Models"}
                     </span>
@@ -157,14 +157,14 @@ export default function DatasetNode({
             </div>
 
             {isExpanded && (
-                <div className="bg-slate-50/30 p-4 flex flex-col gap-3 border-b border-slate-100 animate-in slide-in-from-top-2 duration-200">
+                <div className="bg-slate-50/30 p-2.5 sm:p-4 flex flex-col gap-3 border-b border-slate-100 animate-in slide-in-from-top-2 duration-200">
                     <ConfigGrid
                         title="Physical & Numerical Setup"
                         configObj={femConfig}
                     />
 
                     {isLocal && (
-                        <div className="flex justify-end my-1">
+                        <div className="flex flex-wrap justify-end my-1">
                             <DeleteButton
                                 targetHash={dataHash}
                                 targetType="data"
@@ -175,7 +175,7 @@ export default function DatasetNode({
                     )}
 
                     {isShared && !isLocal && serverIsConnected && (
-                        <div className="flex justify-end my-1">
+                        <div className="flex flex-wrap justify-end my-1">
                             <SyncWorkspaceButton
                                 isLocal={isLocal}
                                 syncPayload={syncPayload}
@@ -185,7 +185,7 @@ export default function DatasetNode({
                     )}
 
                     {linkedModels.length === 0 ? (
-                        <p className="text-xs font-medium text-slate-400 italic pl-12 py-2">
+                        <p className="text-xs font-medium text-slate-400 italic pl-4 sm:pl-12 py-2">
                             No neural operators trained yet using this
                             high-fidelity mesh dataset.
                         </p>

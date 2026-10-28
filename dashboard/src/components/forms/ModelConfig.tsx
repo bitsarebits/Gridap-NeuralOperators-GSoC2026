@@ -44,15 +44,17 @@ export default function ModelConfig({ isLoading }: Props) {
     return (
         <div className="space-y-6">
             {/* Model Box */}
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 shadow-sm">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 sm:p-6 shadow-sm">
                 <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-bold text-blue-900 flex items-center gap-2">
-                        <Settings2 size={20} /> Neural Architecture
+                    <h2 className="text-base sm:text-lg font-bold text-blue-900 flex items-center gap-2">
+                        <Settings2 size={20} className="shrink-0" />
+                        <span>Neural Architecture</span>
                     </h2>
                 </div>
 
-                <div className="grid grid-cols-5 gap-4 mb-4">
-                    <div className="col-span-3">
+                {/* Stack Model Type and Epochs on mobile to prevent select truncation */}
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 sm:gap-4 mb-4">
+                    <div className="sm:col-span-3">
                         <label className="block text-xs font-bold text-blue-800 uppercase tracking-wide">
                             Model Type
                         </label>
@@ -68,7 +70,7 @@ export default function ModelConfig({ isLoading }: Props) {
                             <option value="NOMAD">NOMAD</option>
                         </select>
                     </div>
-                    <div className="col-span-2">
+                    <div className="sm:col-span-2">
                         <label className="block text-xs font-bold text-blue-800 uppercase tracking-wide">
                             Epochs
                         </label>
@@ -91,7 +93,7 @@ export default function ModelConfig({ isLoading }: Props) {
                     <div className="p-2 bg-indigo-100 rounded text-indigo-600 mt-0.5 shrink-0">
                         <GitFork size={16} />
                     </div>
-                    <div className="w-full">
+                    <div className="w-full min-w-0">
                         <label className="block text-xs font-bold text-indigo-900">
                             Pre-trained Model Hash{" "}
                             <span className="text-indigo-400 font-normal ml-1">
@@ -145,8 +147,8 @@ export default function ModelConfig({ isLoading }: Props) {
                 <div className="grid grid-cols-2 gap-3 p-3 bg-white rounded shadow-sm border border-blue-100 relative">
                     {/* Visual Overlay when disabled */}
                     {isFineTuning && (
-                        <div className="absolute inset-0 bg-slate-50/50 z-10 rounded flex items-center justify-center">
-                            <span className="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md">
+                        <div className="absolute inset-0 bg-slate-50/50 z-10 rounded flex items-center justify-center p-2">
+                            <span className="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md text-center">
                                 Architecture Locked for Fine-Tuning
                             </span>
                         </div>
@@ -286,7 +288,7 @@ export default function ModelConfig({ isLoading }: Props) {
                                     </p>
                                 )}
                             </div>
-                            <div>
+                            <div className="col-span-2 sm:col-span-1">
                                 <label className="block text-xs text-slate-600">
                                     Hidden Channels
                                 </label>
@@ -303,7 +305,7 @@ export default function ModelConfig({ isLoading }: Props) {
                                     </p>
                                 )}
                             </div>
-                            <div>
+                            <div className="col-span-2 sm:col-span-1">
                                 <label className="block text-xs text-slate-600">
                                     Modes
                                 </label>
@@ -326,15 +328,15 @@ export default function ModelConfig({ isLoading }: Props) {
             </div>
 
             {/* LR Scheduler Box */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
-                <div className="flex justify-between items-center mb-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
                     <h2 className="text-sm font-bold text-slate-700 uppercase">
                         Learning Rate Scheduler
                     </h2>
                     <select
                         disabled={disableAll}
                         {...register("lr_scheduler_type")}
-                        className="p-1.5 text-sm border rounded bg-white shadow-sm font-medium disabled:opacity-50"
+                        className="w-full sm:w-auto p-2 sm:p-1.5 text-sm border rounded bg-white shadow-sm font-medium disabled:opacity-50"
                     >
                         <option value="CosineAnnealing">
                             Cosine Annealing
@@ -346,7 +348,7 @@ export default function ModelConfig({ isLoading }: Props) {
                 </div>
 
                 {/* DYNAMIC RENDER: SCHEDULER */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                     {selectedScheduler === "CosineAnnealing" ? (
                         <>
                             <div>

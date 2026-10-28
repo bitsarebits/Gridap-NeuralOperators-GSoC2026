@@ -151,7 +151,7 @@ export default function InteractiveEvaluationView({
                 subplots: ["xy", "xy2"],
                 roworder: "top to bottom",
             },
-            margin: { l: 65, r: 25, t: 30, b: 45 },
+            margin: { l: 52, r: 15, t: 40, b: 42 },
             hovermode: "x unified",
             legend: {
                 orientation: "h",
@@ -159,10 +159,10 @@ export default function InteractiveEvaluationView({
                 y: 1.02,
                 xanchor: "left",
                 x: 0,
-                font: { size: 12 },
+                font: { size: 11 },
             },
             xaxis: {
-                title: { text: "Spatial Coordinate (x)", font: { size: 12 } },
+                title: { text: "Spatial Coordinate (x)", font: { size: 11 } },
                 domain: [0, 1],
                 anchor: "y2",
                 gridcolor: "#f1f5f9",
@@ -172,14 +172,14 @@ export default function InteractiveEvaluationView({
                 spikesnap: "cursor",
             },
             yaxis: {
-                title: { text: "Solution u(x, t)", font: { size: 12 } },
+                title: { text: "Solution u(x, t)", font: { size: 11 } },
                 domain: [0.42, 1],
                 range: bounds.uRange,
                 gridcolor: "#f1f5f9",
                 zerolinecolor: "#cbd5e1",
             },
             yaxis2: {
-                title: { text: "|u_pred - u_HF|", font: { size: 12 } },
+                title: { text: "|u_pred - u_HF|", font: { size: 11 } },
                 domain: [0, 0.34],
                 range: lockErrorYAxis ? bounds.errRange : undefined,
                 autorange: !lockErrorYAxis,
@@ -206,6 +206,7 @@ export default function InteractiveEvaluationView({
                     title: { text: "u(x,t)", side: "right" },
                     len: 0.45,
                     y: 0.78,
+                    thickness: 12,
                 },
                 xaxis: "x",
                 yaxis: "y",
@@ -223,6 +224,7 @@ export default function InteractiveEvaluationView({
                     title: { text: "|Error|", side: "right" },
                     len: 0.45,
                     y: 0.22,
+                    thickness: 12,
                 },
                 xaxis: "x",
                 yaxis: "y2",
@@ -235,18 +237,18 @@ export default function InteractiveEvaluationView({
 
     const plot2DLayout = useMemo<Partial<Plotly.Layout>>(
         () => ({
-            margin: { l: 65, r: 80, t: 30, b: 45 },
+            margin: { l: 52, r: 62, t: 25, b: 42 },
             xaxis: {
-                title: { text: "Spatial Coordinate (x)", font: { size: 12 } },
+                title: { text: "Spatial Coordinate (x)", font: { size: 11 } },
                 domain: [0, 1],
                 anchor: "y2",
             },
             yaxis: {
-                title: { text: "Time t (Prediction)", font: { size: 12 } },
+                title: { text: "Time t (Prediction)", font: { size: 11 } },
                 domain: [0.55, 1],
             },
             yaxis2: {
-                title: { text: "Time t (|Error|)", font: { size: 12 } },
+                title: { text: "Time t (|Error|)", font: { size: 11 } },
                 domain: [0, 0.45],
             },
             shapes: [
@@ -311,7 +313,7 @@ export default function InteractiveEvaluationView({
 
     const errorStripLayout = useMemo<Partial<Plotly.Layout>>(
         () => ({
-            margin: { l: 55, r: 20, t: 10, b: 28 },
+            margin: { l: 48, r: 15, t: 10, b: 28 },
             showlegend: false,
             hovermode: "x",
             xaxis: {
@@ -376,40 +378,42 @@ export default function InteractiveEvaluationView({
     const hasLossHistory = loss_history.length > 0;
 
     return (
-        <div className="w-full flex flex-col gap-4">
+        <div className="w-full flex flex-col gap-3.5 sm:gap-4">
             {/* 1. EXECUTIVE KPI HEADER CARDS */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
                 {/* Speedup Card */}
-                <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex flex-col justify-between">
+                <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 sm:p-3.5 flex flex-col justify-between">
                     <div className="flex items-center justify-between text-emerald-700">
                         <span className="text-[11px] font-bold uppercase tracking-wider">
                             Inference Speedup
                         </span>
-                        <Zap size={16} className="text-emerald-600" />
+                        <Zap size={16} className="text-emerald-600 shrink-0" />
                     </div>
                     <div className="mt-1">
-                        <span className="text-2xl font-extrabold text-emerald-900 font-mono">
+                        <span className="text-xl sm:text-2xl font-extrabold text-emerald-900 font-mono">
                             {metrics.speedup}x
                         </span>
-                        <p className="text-[11px] text-emerald-700 font-mono mt-0.5">
-                            FEM: {metrics.t_fem}s
-                        </p>
-                        <p className="text-[11px] text-emerald-700 font-mono mt-0.5">
-                            NN: {metrics.t_nn}s
-                        </p>
+                        <div className="flex sm:flex-col gap-3 sm:gap-0">
+                            <p className="text-[11px] text-emerald-700 font-mono mt-0.5">
+                                FEM: {metrics.t_fem}s
+                            </p>
+                            <p className="text-[11px] text-emerald-700 font-mono mt-0.5">
+                                NN: {metrics.t_nn}s
+                            </p>
+                        </div>
                     </div>
                 </div>
 
                 {/* Mean L2 Error Card */}
-                <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 flex flex-col justify-between">
+                <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 sm:p-3.5 flex flex-col justify-between">
                     <div className="flex items-center justify-between text-blue-700">
                         <span className="text-[11px] font-bold uppercase tracking-wider">
                             Mean Rel. L₂ Error
                         </span>
-                        <Target size={16} className="text-blue-600" />
+                        <Target size={16} className="text-blue-600 shrink-0" />
                     </div>
                     <div className="mt-1">
-                        <span className="text-2xl font-extrabold text-blue-900 font-mono">
+                        <span className="text-xl sm:text-2xl font-extrabold text-blue-900 font-mono">
                             {metrics.mean_rel_l2.toFixed(2)}%
                         </span>
                         <p className="text-[11px] text-blue-700 font-mono mt-0.5">
@@ -419,16 +423,19 @@ export default function InteractiveEvaluationView({
                 </div>
 
                 {/* Peak Error Card + Jump Button */}
-                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 flex flex-col justify-between">
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 sm:p-3.5 flex flex-col justify-between">
                     <div className="flex items-center justify-between text-amber-800">
                         <span className="text-[11px] font-bold uppercase tracking-wider">
                             Peak Rel. L₂ Error
                         </span>
-                        <AlertTriangle size={16} className="text-amber-600" />
+                        <AlertTriangle
+                            size={16}
+                            className="text-amber-600 shrink-0"
+                        />
                     </div>
                     <div className="mt-1 flex items-baseline justify-between gap-2">
                         <div>
-                            <span className="text-2xl font-extrabold text-amber-900 font-mono">
+                            <span className="text-xl sm:text-2xl font-extrabold text-amber-900 font-mono">
                                 {metrics.max_rel_l2.toFixed(2)}%
                             </span>
                             <p className="text-[11px] text-amber-700 font-mono mt-0.5">
@@ -452,12 +459,12 @@ export default function InteractiveEvaluationView({
                 </div>
 
                 {/* Domain & Test Parameter Card */}
-                <div className="bg-slate-100/80 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
+                <div className="bg-slate-100/80 border border-slate-200 rounded-xl p-3 sm:p-3.5 flex flex-col justify-between">
                     <div className="flex items-center justify-between text-slate-600">
                         <span className="text-[11px] font-bold uppercase tracking-wider">
                             Zero-Shot Setup
                         </span>
-                        <Grid size={16} className="text-slate-500" />
+                        <Grid size={16} className="text-slate-500 shrink-0" />
                     </div>
                     <div className="mt-1">
                         <span className="text-lg font-extrabold text-slate-800 font-mono">
@@ -471,68 +478,71 @@ export default function InteractiveEvaluationView({
             </div>
 
             {/* 2. VIEW SWITCHER TABS & CONTROLS */}
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-                <div className="flex items-center gap-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                <div className="flex flex-wrap items-center gap-1 w-full sm:w-auto">
                     <button
                         type="button"
                         onClick={() => setActiveTab("1d")}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        className={`flex-1 sm:flex-initial justify-center flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                             activeTab === "1d"
                                 ? "bg-white text-blue-700 shadow-xs"
                                 : "text-slate-600 hover:text-slate-900"
                         }`}
                     >
-                        <Activity size={14} />
-                        1D Time-Machine
+                        <Activity size={14} className="shrink-0" />
+                        <span>1D Time-Machine</span>
                     </button>
                     <button
                         type="button"
                         onClick={() => setActiveTab("2d")}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        className={`flex-1 sm:flex-initial justify-center flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                             activeTab === "2d"
                                 ? "bg-white text-blue-700 shadow-xs"
                                 : "text-slate-600 hover:text-slate-900"
                         }`}
                     >
-                        <Layers size={14} />
-                        2D Spatio-Temporal Heatmap
+                        <Layers size={14} className="shrink-0" />
+                        <span>2D Spatio-Temporal Heatmap</span>
                     </button>
                     {hasLossHistory && (
                         <button
                             type="button"
                             onClick={() => setActiveTab("loss")}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            className={`flex-1 sm:flex-initial justify-center flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                 activeTab === "loss"
                                     ? "bg-white text-blue-700 shadow-xs"
                                     : "text-slate-600 hover:text-slate-900"
                             }`}
                         >
-                            <TrendingDown size={14} />
-                            Training Convergence
+                            <TrendingDown size={14} className="shrink-0" />
+                            <span>Training Convergence</span>
                         </button>
                     )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 w-full sm:w-auto">
                     {activeTab === "1d" && (
                         <button
                             type="button"
                             onClick={() => setLockErrorYAxis(!lockErrorYAxis)}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                            className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
                             title="Lock or auto-scale the error Y-axis across timesteps"
                         >
                             {lockErrorYAxis ? (
                                 <>
-                                    <Lock size={12} className="text-blue-600" />
-                                    Error Y-Axis: Locked
+                                    <Lock
+                                        size={12}
+                                        className="text-blue-600 shrink-0"
+                                    />
+                                    <span>Error Y-Axis: Locked</span>
                                 </>
                             ) : (
                                 <>
                                     <Unlock
                                         size={12}
-                                        className="text-amber-600"
+                                        className="text-amber-600 shrink-0"
                                     />
-                                    Error Y-Axis: Auto
+                                    <span>Error Y-Axis: Auto</span>
                                 </>
                             )}
                         </button>
@@ -540,31 +550,37 @@ export default function InteractiveEvaluationView({
                     <button
                         type="button"
                         onClick={handleDownloadJson}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
+                        className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
                         title="Download raw evaluation tensors and metrics as JSON"
                     >
-                        <Download size={12} />
-                        Raw JSON
+                        <Download size={12} className="shrink-0" />
+                        <span>Raw JSON</span>
                     </button>
                 </div>
             </div>
 
             {/* 3. MAIN INTERACTIVE CHART CANVAS */}
-            <div className="border border-slate-200 rounded-xl bg-white p-3 shadow-xs">
+            <div className="border border-slate-200 rounded-xl bg-white p-2 sm:p-3 shadow-xs">
                 {activeTab === "1d" && (
-                    <div className={compact ? "h-105" : "h-125"}>
+                    <div
+                        className={compact ? "h-85 sm:h-105" : "h-95 sm:h-125"}
+                    >
                         <PlotlyChart data={plot1DData} layout={plot1DLayout} />
                     </div>
                 )}
 
                 {activeTab === "2d" && (
                     <div className="flex flex-col gap-2">
-                        <p className="text-xs text-slate-500 px-2">
+                        <p className="text-xs text-slate-500 px-1 sm:px-2">
                             Click anywhere on the heatmap to jump the
                             Time-Machine to that exact time instant{" "}
                             <span className="font-mono font-semibold">t</span>.
                         </p>
-                        <div className={compact ? "h-110" : "h-130"}>
+                        <div
+                            className={
+                                compact ? "h-90 sm:h-110" : "h-100 sm:h-130"
+                            }
+                        >
                             <PlotlyChart
                                 data={plot2DData}
                                 layout={plot2DLayout}
@@ -575,7 +591,9 @@ export default function InteractiveEvaluationView({
                 )}
 
                 {activeTab === "loss" && hasLossHistory && (
-                    <div className={compact ? "h-95" : "h-112.5"}>
+                    <div
+                        className={compact ? "h-80 sm:h-95" : "h-90 sm:h-112.5"}
+                    >
                         <PlotlyChart
                             data={[
                                 {
@@ -588,7 +606,7 @@ export default function InteractiveEvaluationView({
                                 },
                             ]}
                             layout={{
-                                margin: { l: 70, r: 30, t: 30, b: 50 },
+                                margin: { l: 55, r: 20, t: 25, b: 45 },
                                 xaxis: {
                                     title: { text: "Epoch" },
                                     gridcolor: "#f1f5f9",
@@ -609,7 +627,7 @@ export default function InteractiveEvaluationView({
 
             {/* 4. TEMPORAL ERROR EVOLUTION STRIP E(t) & PLAYBACK CONTROLLER */}
             {activeTab !== "loss" && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-4 flex flex-col gap-3">
                     {/* E(t) Interactive Strip */}
                     <div className="h-28 w-full bg-white rounded-lg border border-slate-100 p-1">
                         <PlotlyChart
@@ -621,50 +639,58 @@ export default function InteractiveEvaluationView({
                     </div>
 
                     {/* Scrubber & Transport Controls */}
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setIsPlaying(false);
-                                    setTIdx((prev) =>
-                                        prev > 0 ? prev - 1 : numSteps - 1,
-                                    );
-                                }}
-                                className="p-2 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
-                                title="Previous timestep"
-                            >
-                                <SkipBack size={16} />
-                            </button>
+                    <div className="flex flex-col md:flex-row md:flex-wrap items-stretch md:items-center justify-between gap-3 sm:gap-4">
+                        {/* Transport Buttons */}
+                        <div className="flex items-center justify-between sm:justify-start gap-2">
+                            <div className="flex items-center gap-1.5 sm:gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsPlaying(false);
+                                        setTIdx((prev) =>
+                                            prev > 0 ? prev - 1 : numSteps - 1,
+                                        );
+                                    }}
+                                    className="p-2 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
+                                    title="Previous timestep"
+                                >
+                                    <SkipBack size={16} />
+                                </button>
 
-                            <button
-                                type="button"
-                                onClick={() => setIsPlaying(!isPlaying)}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
-                            >
-                                {isPlaying ? (
-                                    <>
-                                        <Pause size={15} /> Pause
-                                    </>
-                                ) : (
-                                    <>
-                                        <Play size={15} fill="currentColor" />{" "}
-                                        Play
-                                    </>
-                                )}
-                            </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPlaying(!isPlaying)}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                                >
+                                    {isPlaying ? (
+                                        <>
+                                            <Pause size={15} /> Pause
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Play
+                                                size={15}
+                                                fill="currentColor"
+                                            />{" "}
+                                            Play
+                                        </>
+                                    )}
+                                </button>
 
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setIsPlaying(false);
-                                    setTIdx((prev) => (prev + 1) % numSteps);
-                                }}
-                                className="p-2 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
-                                title="Next timestep"
-                            >
-                                <SkipForward size={16} />
-                            </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsPlaying(false);
+                                        setTIdx(
+                                            (prev) => (prev + 1) % numSteps,
+                                        );
+                                    }}
+                                    className="p-2 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
+                                    title="Next timestep"
+                                >
+                                    <SkipForward size={16} />
+                                </button>
+                            </div>
 
                             {/* Speed selector */}
                             <select
@@ -672,7 +698,7 @@ export default function InteractiveEvaluationView({
                                 onChange={(e) =>
                                     setPlaybackSpeed(Number(e.target.value))
                                 }
-                                className="ml-1 px-2 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-lg text-slate-700"
+                                className="px-2 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-lg text-slate-700"
                                 title="Playback speed"
                             >
                                 <option value={0.25}>0.25x</option>
@@ -682,9 +708,9 @@ export default function InteractiveEvaluationView({
                             </select>
                         </div>
 
-                        {/* Time Slider */}
-                        <div className="flex-1 min-w-50 flex items-center gap-3">
-                            <span className="text-xs font-mono text-slate-500">
+                        {/* Time Slider - Full width on mobile for smooth touch scrubbing */}
+                        <div className="w-full md:flex-1 md:min-w-50 flex items-center gap-2 sm:gap-3">
+                            <span className="text-[11px] sm:text-xs font-mono text-slate-500 shrink-0">
                                 t₀={t_grid[0]?.toFixed(2)}s
                             </span>
                             <input
@@ -698,21 +724,21 @@ export default function InteractiveEvaluationView({
                                 }}
                                 className="w-full accent-blue-600 cursor-pointer"
                             />
-                            <span className="text-xs font-mono text-slate-500">
+                            <span className="text-[11px] sm:text-xs font-mono text-slate-500 shrink-0">
                                 tf={t_grid[numSteps - 1]?.toFixed(2)}s
                             </span>
                         </div>
 
                         {/* Live Timestep Readout Badges */}
-                        <div className="flex items-center gap-2 font-mono text-xs">
-                            <span className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-800">
+                        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 sm:gap-2 font-mono text-[11px] sm:text-xs">
+                            <span className="px-2 sm:px-2.5 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-800">
                                 t = {currentT.toFixed(3)}s ({tIdx + 1}/
                                 {numSteps})
                             </span>
-                            <span className="px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg font-bold text-amber-800">
+                            <span className="px-2 sm:px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg font-bold text-amber-800">
                                 L₂: {(rel_l2_t[tIdx] ?? 0).toFixed(2)}%
                             </span>
-                            <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-lg font-bold text-emerald-800 hidden sm:inline-block">
+                            <span className="px-2 sm:px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-lg font-bold text-emerald-800">
                                 L∞: {(linf_t[tIdx] ?? 0).toExponential(2)}
                             </span>
                         </div>

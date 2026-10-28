@@ -55,9 +55,9 @@ export default function DeleteButton({
 
     if (confirmPhase) {
         return (
-            <div className="flex items-center gap-1 bg-red-50 p-1 rounded-lg border border-red-200 animate-in fade-in duration-200">
+            <div className="flex flex-wrap items-center gap-1 bg-red-50 p-1 rounded-lg border border-red-200 animate-in fade-in duration-200">
                 <div className="text-xs text-red-700 font-semibold px-2 flex items-center gap-1">
-                    <AlertTriangle size={14} /> Sure?
+                    <AlertTriangle size={14} className="shrink-0" /> Sure?
                 </div>
                 <button
                     onClick={handleDelete}
@@ -88,11 +88,11 @@ export default function DeleteButton({
                 e.stopPropagation(); // Prevent the opening/closing of the accordion
                 setConfirmPhase(true);
             }}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:text-red-600 hover:border-red-200 hover:bg-red-50 rounded-lg shadow-sm transition-all"
+            className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:text-red-600 hover:border-red-200 hover:bg-red-50 rounded-lg shadow-sm transition-all text-left"
             title={`Delete ${mode} ${targetType}`}
         >
-            <Trash2 size={18} />
-            {buttonLabel}
+            <Trash2 size={16} className="sm:w-4.5 sm:h-4.5 shrink-0" />
+            <span>{buttonLabel}</span>
         </button>
     );
 }

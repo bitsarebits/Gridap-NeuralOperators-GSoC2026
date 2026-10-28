@@ -12,7 +12,7 @@ export default function EvalConfig({ isLoading }: Props) {
     } = useFormContext<SimulationFormValues>();
 
     return (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center mt-2">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mt-2">
             <div>
                 <h2 className="text-sm font-bold text-amber-900">
                     Zero-Shot Evaluation
@@ -21,7 +21,7 @@ export default function EvalConfig({ isLoading }: Props) {
                     Test the trained model on an unseen parameter.
                 </p>
             </div>
-            <div className="w-1/3">
+            <div className="w-full sm:w-44 shrink-0">
                 <label className="block text-xs font-bold text-amber-800">
                     Sigma Test
                 </label>

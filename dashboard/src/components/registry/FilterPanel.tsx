@@ -54,7 +54,7 @@ export default function FilterPanel({
     const selectedModel = filters.model_type;
 
     return (
-        <div className="w-full p-6 bg-white border-t border-slate-100 shadow-md animate-in slide-in-from-top-2">
+        <div className="w-full p-4 sm:p-6 bg-white border-t border-slate-100 shadow-md animate-in slide-in-from-top-2">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-sm font-bold text-slate-700">
                     Parametric Search Space
@@ -69,7 +69,7 @@ export default function FilterPanel({
                 )}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-6">
                 {/* FEM Category */}
                 <div className="space-y-3">
                     <h4 className="text-xs font-bold text-emerald-600 border-b border-emerald-100 pb-1">

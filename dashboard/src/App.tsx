@@ -33,7 +33,8 @@ const mapRegistryToFormValues = (
         solverObj.hidden_channels?.join(", ") ?? defaultValues.hidden_channels;
 
     const scheduler = solverObj.lr_scheduler;
-    const schedulerType = scheduler.type as SimulationFormValues["lr_scheduler_type"];
+    const schedulerType =
+        scheduler.type as SimulationFormValues["lr_scheduler_type"];
 
     return {
         // FEM
@@ -111,66 +112,75 @@ function App() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col items-center">
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center overflow-x-hidden">
             {/* Global Navigation Header */}
-            <header className="w-full bg-white border-b shadow-sm sticky top-0 z-10">
-                <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+            <header className="w-full bg-white border-b shadow-sm sticky top-0 z-20">
+                <div className="max-w-7xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2">
                     {/* Brand Logo & Title */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                         <img
                             src={gridapLogo}
                             alt="Gridap Logo"
-                            className="h-8 w-auto object-contain"
+                            className="h-7 sm:h-8 w-auto object-contain"
                         />
-                        <span className="font-extrabold text-slate-800 text-xl hidden sm:block">
+                        <span className="font-extrabold text-slate-800 text-lg sm:text-xl hidden sm:block">
                             GridapROMs Orchestrator
                         </span>
                     </div>
 
                     {/* Navigation Tabs */}
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2">
                         <button
                             type="button"
                             onClick={() => setCurrentView("docs")}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold transition-colors cursor-pointer text-sm ${
+                            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg font-semibold transition-colors cursor-pointer text-xs sm:text-sm ${
                                 currentView === "docs"
                                     ? "bg-slate-100 text-slate-900"
                                     : "text-slate-500 hover:text-slate-800"
                             }`}
                         >
-                            <BookOpen size={18} />
-                            Docs
+                            <BookOpen
+                                size={16}
+                                className="sm:w-4.5 sm:h-4.5 shrink-0"
+                            />
+                            <span>Docs</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => setCurrentView("orchestrator")}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold transition-colors cursor-pointer text-sm ${
+                            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg font-semibold transition-colors cursor-pointer text-xs sm:text-sm ${
                                 currentView === "orchestrator"
                                     ? "bg-slate-100 text-slate-900"
                                     : "text-slate-500 hover:text-slate-800"
                             }`}
                         >
-                            <LayoutDashboard size={18} />
-                            Pipeline
+                            <LayoutDashboard
+                                size={16}
+                                className="sm:w-4.5 sm:h-4.5 shrink-0"
+                            />
+                            <span>Pipeline</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => setCurrentView("catalog")}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold transition-colors cursor-pointer text-sm ${
+                            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg font-semibold transition-colors cursor-pointer text-xs sm:text-sm ${
                                 currentView === "catalog"
                                     ? "bg-slate-100 text-slate-900"
                                     : "text-slate-500 hover:text-slate-800"
                             }`}
                         >
-                            <Database size={18} />
-                            Registry
+                            <Database
+                                size={16}
+                                className="sm:w-4.5 sm:h-4.5 shrink-0"
+                            />
+                            <span>Registry</span>
                         </button>
                     </div>
                 </div>
             </header>
 
             {/* Dynamic View Router Outlet */}
-            <main className="w-full max-w-7xl px-4 py-8 flex justify-center">
+            <main className="w-full max-w-7xl px-3 sm:px-4 py-4 sm:py-8 flex justify-center">
                 {currentView === "orchestrator" &&
                     (serverStatus === "connected" ? (
                         <OrchestratorView

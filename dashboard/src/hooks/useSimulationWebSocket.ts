@@ -6,7 +6,13 @@ import type {
 } from "../types";
 
 const SESSION_KEY = "gridap_simulation_session_id";
-const WS_URL = "ws://127.0.0.1:8080/ws/simulate";
+
+// Dynamically build the WebSocket URL from the current browser location.
+// Automatically switches to wss:// when accessed over HTTPS (e.g. VS Code Web Tunnels).
+const getWsUrl = () => {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}/ws/simulate`;
+};
 
 // Interface for the exit Request message
 interface WebSocketRequest {
@@ -75,7 +81,7 @@ export const useSimulationSocket = (
                 setStatusMessage("");
             }
 
-            const socket = new WebSocket(WS_URL);
+            const socket = new WebSocket(getWsUrl());
             wsRef.current = socket;
 
             socket.onopen = () => {

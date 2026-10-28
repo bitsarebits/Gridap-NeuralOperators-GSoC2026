@@ -307,22 +307,22 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="arena-modal-title"
-                className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl h-[92dvh] max-h-[92vh] min-h-0 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+                className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl h-[94dvh] sm:h-[92dvh] max-h-[94vh] min-h-0 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
             >
                 {/* Modal Header */}
-                <div className="shrink-0 px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl">
-                            <Trophy size={22} />
+                <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                        <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl shrink-0">
+                            <Trophy size={20} className="sm:w-5.5 sm:h-5.5" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                             <h2
                                 id="arena-modal-title"
-                                className="text-lg font-extrabold"
+                                className="text-sm sm:text-lg font-extrabold truncate"
                             >
                                 Neural Operator Benchmark Arena
                             </h2>
-                            <p className="text-xs text-slate-400">
+                            <p className="text-[11px] sm:text-xs text-slate-400">
                                 Comparing {loadedEvals.length} models
                                 side-by-side
                             </p>
@@ -331,65 +331,75 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
                     <button
                         type="button"
                         onClick={onClose}
-                        className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                        className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
                     >
                         <X size={20} />
                     </button>
                 </div>
 
                 {/* Modal Content */}
-                <div className="flex-1 min-h-0 p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-6">
+                <div className="flex-1 min-h-0 p-3 sm:p-6 overflow-y-auto overscroll-contain space-y-4 sm:space-y-6">
                     {isLoading ? (
                         <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-500">
                             <Loader2
                                 size={36}
                                 className="animate-spin text-blue-600"
                             />
-                            <p className="text-sm font-semibold">
+                            <p className="text-sm font-semibold text-center px-4">
                                 Loading spatio-temporal tensors into the
                                 Arena...
                             </p>
                         </div>
                     ) : error ? (
-                        <div className="p-6 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700">
+                        <div className="p-4 sm:p-6 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700">
                             <AlertCircle size={20} className="shrink-0" />
-                            <span className="text-sm font-medium">{error}</span>
+                            <span className="text-xs sm:text-sm font-medium">
+                                {error}
+                            </span>
                         </div>
                     ) : (
                         <>
                             {/* View Switcher */}
                             <div className="flex items-center justify-between flex-wrap gap-3">
-                                <div className="flex gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-1.5 sm:gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200 w-full sm:w-auto">
                                     <button
                                         type="button"
                                         onClick={() => setActiveView("overlay")}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                        className={`flex-1 sm:flex-initial justify-center flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             activeView === "overlay"
                                                 ? "bg-white text-blue-700 shadow-xs"
                                                 : "text-slate-600 hover:text-slate-900"
                                         }`}
                                     >
-                                        <Activity size={15} />
-                                        Multi-Model Wave Overlay
+                                        <Activity
+                                            size={15}
+                                            className="shrink-0"
+                                        />
+                                        <span>Multi-Model Wave Overlay</span>
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setActiveView("pareto")}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                        className={`flex-1 sm:flex-initial justify-center flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             activeView === "pareto"
                                                 ? "bg-white text-blue-700 shadow-xs"
                                                 : "text-slate-600 hover:text-slate-900"
                                         }`}
                                     >
-                                        <ScatterChart size={15} />
-                                        Pareto Frontier (Speed vs Accuracy)
+                                        <ScatterChart
+                                            size={15}
+                                            className="shrink-0"
+                                        />
+                                        <span>
+                                            Pareto Frontier (Speed vs Accuracy)
+                                        </span>
                                     </button>
                                 </div>
                             </div>
 
                             {activeView === "overlay" ? (
-                                <div className="flex flex-col gap-4">
-                                    <div className="h-115 border border-slate-200 rounded-xl p-2 bg-white">
+                                <div className="flex flex-col gap-3 sm:gap-4">
+                                    <div className="h-85 sm:h-115 border border-slate-200 rounded-xl p-2 bg-white">
                                         <PlotlyChart
                                             data={overlayTraces}
                                             layout={{
@@ -399,16 +409,17 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
                                                     subplots: ["xy", "xy2"],
                                                 },
                                                 margin: {
-                                                    l: 65,
-                                                    r: 25,
-                                                    t: 30,
-                                                    b: 45,
+                                                    l: 52,
+                                                    r: 15,
+                                                    t: 40,
+                                                    b: 42,
                                                 },
                                                 hovermode: "x unified",
                                                 legend: {
                                                     orientation: "h",
-                                                    y: 1.08,
+                                                    y: 1.06,
                                                     x: 0,
+                                                    font: { size: 11 },
                                                 },
                                                 xaxis: {
                                                     title: {
@@ -435,13 +446,13 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
                                     </div>
 
                                     {/* Master Time Scrubber */}
-                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center gap-4">
+                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-4 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 sm:gap-4">
                                         <button
                                             type="button"
                                             onClick={() =>
                                                 setIsPlaying(!isPlaying)
                                             }
-                                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer"
+                                            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer shrink-0"
                                         >
                                             {isPlaying ? (
                                                 <>
@@ -468,28 +479,28 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
                                                     Number(e.target.value),
                                                 );
                                             }}
-                                            className="flex-1 accent-blue-600 cursor-pointer"
+                                            className="w-full sm:flex-1 order-last sm:order-0 accent-blue-600 cursor-pointer"
                                         />
-                                        <span className="font-mono text-xs font-bold bg-white px-3 py-1.5 rounded-lg border border-slate-200">
+                                        <span className="font-mono text-xs font-bold bg-white px-3 py-1.5 rounded-lg border border-slate-200 shrink-0">
                                             t = {currentPhysicalTime.toFixed(3)}
                                             s
                                         </span>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="h-105 border border-slate-200 rounded-xl p-4 bg-white">
+                                <div className="h-80 sm:h-105 border border-slate-200 rounded-xl p-2 sm:p-4 bg-white">
                                     <PlotlyChart
                                         data={paretoTraces}
                                         layout={{
                                             title: {
                                                 text: "Accuracy vs. Inference Time (Bottom-Left is Optimal)",
-                                                font: { size: 14 },
+                                                font: { size: 12 },
                                             },
                                             margin: {
-                                                l: 70,
-                                                r: 40,
-                                                t: 50,
-                                                b: 55,
+                                                l: 55,
+                                                r: 25,
+                                                t: 45,
+                                                b: 50,
                                             },
                                             xaxis: {
                                                 title: {
@@ -510,23 +521,33 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
 
                             {/* Summary Leaderboard Table */}
                             <div className="shrink-0 overflow-x-auto border border-slate-200 rounded-xl">
-                                <table className="w-full text-left border-collapse text-xs">
+                                <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
                                     <thead>
                                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                                            <th className="p-3">Model</th>
-                                            <th className="p-3">Eval Hash</th>
-                                            <th className="p-3">σ_test</th>
-                                            <th className="p-3">Speedup</th>
-                                            <th className="p-3">
+                                            <th className="p-2.5 sm:p-3">
+                                                Model
+                                            </th>
+                                            <th className="p-2.5 sm:p-3">
+                                                Eval Hash
+                                            </th>
+                                            <th className="p-2.5 sm:p-3">
+                                                σ_test
+                                            </th>
+                                            <th className="p-2.5 sm:p-3">
+                                                Speedup
+                                            </th>
+                                            <th className="p-2.5 sm:p-3">
                                                 Inference (ms)
                                             </th>
-                                            <th className="p-3">
+                                            <th className="p-2.5 sm:p-3">
                                                 Mean Rel L₂ (%)
                                             </th>
-                                            <th className="p-3">
+                                            <th className="p-2.5 sm:p-3">
                                                 Peak Rel L₂ (%)
                                             </th>
-                                            <th className="p-3">Max |Error|</th>
+                                            <th className="p-2.5 sm:p-3">
+                                                Max |Error|
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 font-mono">
@@ -535,9 +556,9 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
                                                 key={ev.eval_hash}
                                                 className="hover:bg-slate-50"
                                             >
-                                                <td className="p-3 font-sans font-bold flex items-center gap-2">
+                                                <td className="p-2.5 sm:p-3 font-sans font-bold flex items-center gap-2">
                                                     <span
-                                                        className="w-3 h-3 rounded-full inline-block"
+                                                        className="w-3 h-3 rounded-full inline-block shrink-0"
                                                         style={{
                                                             backgroundColor:
                                                                 MODEL_COLORS[
@@ -548,34 +569,34 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
                                                     />
                                                     {ev.solver_name}
                                                 </td>
-                                                <td className="p-3 text-slate-500">
+                                                <td className="p-2.5 sm:p-3 text-slate-500">
                                                     {ev.eval_hash}
                                                 </td>
-                                                <td className="p-3">
+                                                <td className="p-2.5 sm:p-3">
                                                     {ev.metrics.sigma_test}
                                                 </td>
-                                                <td className="p-3 font-bold text-emerald-700">
+                                                <td className="p-2.5 sm:p-3 font-bold text-emerald-700">
                                                     {ev.metrics.speedup}x
                                                 </td>
-                                                <td className="p-3">
+                                                <td className="p-2.5 sm:p-3">
                                                     {(
                                                         ev.metrics.t_nn * 1000
                                                     ).toFixed(2)}{" "}
                                                     ms
                                                 </td>
-                                                <td className="p-3 font-bold text-blue-700">
+                                                <td className="p-2.5 sm:p-3 font-bold text-blue-700">
                                                     {ev.metrics.mean_rel_l2.toFixed(
                                                         2,
                                                     )}
                                                     %
                                                 </td>
-                                                <td className="p-3 text-amber-700">
+                                                <td className="p-2.5 sm:p-3 text-amber-700">
                                                     {ev.metrics.max_rel_l2.toFixed(
                                                         2,
                                                     )}
                                                     %
                                                 </td>
-                                                <td className="p-3">
+                                                <td className="p-2.5 sm:p-3">
                                                     {ev.metrics.linf_error.toExponential(
                                                         2,
                                                     )}

@@ -4,46 +4,45 @@ interface ServerConnectionScreenProps {
     status: "connecting" | "connected" | "disconnected";
 }
 
+const CLONE_COMMANDS = `git clone https://github.com/bitsarebits/Gridap-NeuralOperators-GSoC2026.git
+cd Gridap-NeuralOperators-GSoC2026
+julia scripts/server_dashboard.jl`;
+
 export default function ServerConnectionScreen({
     status,
 }: ServerConnectionScreenProps) {
-    const isLocalhost =
-        window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1";
+    // Detect if the dashboard is hosted on GitHub Pages
+    const isGitHubPages = window.location.hostname.endsWith("github.io");
 
     // If we are online (GitHub Pages) and the server is not connected,
     // we show the Read-Only Gallery message
-    if (!isLocalhost && status !== "connected") {
+    if (isGitHubPages && status !== "connected") {
         return (
-            <div className="flex flex-col items-center justify-center py-20 px-4 text-center max-w-2xl mx-auto animate-in fade-in zoom-in-95 duration-500">
-                <div className="bg-blue-50 p-4 rounded-full text-blue-500 mb-6 border border-blue-100">
-                    <Globe size={48} />
+            <div className="w-full max-w-2xl min-w-0 mx-auto flex flex-col items-center justify-center py-8 sm:py-20 px-2 sm:px-4 text-center animate-in fade-in zoom-in-95 duration-500">
+                <div className="bg-blue-50 p-3.5 sm:p-4 rounded-full text-blue-500 mb-4 sm:mb-6 border border-blue-100 shrink-0">
+                    <Globe size={40} className="sm:w-12 sm:h-12" />
                 </div>
-                <h2 className="text-2xl font-bold text-slate-800 mb-3">
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-800 mb-3 px-2">
                     Read-Only Public Gallery
                 </h2>
-                <p className="text-slate-600 mb-8">
+                <p className="text-xs sm:text-base text-slate-600 mb-6 sm:mb-8 px-2 leading-relaxed">
                     You are viewing the GridapROMs dashboard online. The local
                     Julia backend is not accessible, so you can explore cached
                     experiments and shared results, but cannot run new
                     simulations.
                 </p>
-                <div className="bg-white border border-slate-200 rounded-xl p-6 w-full text-left shadow-sm">
-                    <h3 className="font-semibold text-slate-800 mb-2">
+                <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 w-full min-w-0 overflow-hidden text-left shadow-sm">
+                    <h3 className="font-semibold text-sm sm:text-base text-slate-800 mb-2">
                         Want to run new simulations?
                     </h3>
-                    <p className="text-sm text-slate-500 mb-4">
+                    <p className="text-xs sm:text-sm text-slate-500 mb-4 leading-relaxed">
                         Clone the GSoC experiments repository and run the local
                         server to unlock the Pipeline Orchestrator and
                         interactive training.
                     </p>
-                    <div className="bg-slate-50 border border-slate-100 p-3 rounded text-xs font-mono text-slate-700 whitespace-pre overflow-x-auto select-all">
-                        git clone
-                        https://github.com/bitsarebits/Gridap-NeuralOperators-GSoC2026.git
-                        {"\n"}
-                        cd Gridap-NeuralOperators-GSoC2026{"\n"}
-                        julia scripts/server_dashboard.jl
-                    </div>
+                    <pre className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-[11px] sm:text-xs font-mono text-slate-700 w-full max-w-full overflow-x-auto select-all leading-relaxed">
+                        {CLONE_COMMANDS}
+                    </pre>
                 </div>
             </div>
         );
@@ -52,8 +51,8 @@ export default function ServerConnectionScreen({
     const isConnecting = status === "connecting";
 
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl p-10 max-w-md w-full text-center flex flex-col items-center animate-in fade-in zoom-in duration-500">
+        <div className="py-12 sm:py-20 w-full min-w-0 flex flex-col items-center justify-center px-2 sm:px-4">
+            <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-10 max-w-md w-full min-w-0 text-center flex flex-col items-center animate-in fade-in zoom-in duration-500">
                 <div className="relative mb-6">
                     <BrainCircuit
                         size={64}
@@ -65,30 +64,33 @@ export default function ServerConnectionScreen({
                     />
                 </div>
 
-                <h2 className="text-2xl font-bold text-slate-800 mb-2">
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-800 mb-2">
                     {isConnecting ? "Booting Engine..." : "Connection Lost"}
                 </h2>
 
-                <p className="text-slate-500 text-sm mb-8">
+                <p className="text-slate-500 text-xs sm:text-sm mb-6 sm:mb-8 leading-relaxed">
                     {isConnecting
                         ? "Waking up the Julia backend and JIT compiling libraries. This can take a few minutes on the first run."
                         : "Cannot reach the Julia server. Please ensure Oxygen.jl is running on port 8080."}
                 </p>
 
-                <div className="flex items-center justify-center gap-3 text-sm font-semibold bg-slate-50 px-6 py-3 rounded-xl border border-slate-100 w-full">
+                <div className="flex items-center justify-center gap-3 text-xs sm:text-sm font-semibold bg-slate-50 px-4 sm:px-6 py-3 rounded-xl border border-slate-100 w-full">
                     {isConnecting ? (
                         <>
                             <Loader2
                                 size={16}
-                                className="text-blue-500 animate-spin"
+                                className="text-blue-500 animate-spin shrink-0"
                             />
-                            <span className="text-blue-700">
-                                Waiting for 127.0.0.1:8080...
+                            <span className="text-blue-700 truncate">
+                                Waiting for Julia Backend...
                             </span>
                         </>
                     ) : (
                         <>
-                            <Server size={16} className="text-red-500" />
+                            <Server
+                                size={16}
+                                className="text-red-500 shrink-0"
+                            />
                             <span className="text-red-700">Server Offline</span>
                         </>
                     )}

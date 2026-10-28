@@ -256,18 +256,18 @@ export default function ModelNode({
     };
 
     return (
-        <div className="bg-white border-t border-slate-100 transition-all">
+        <div className="bg-white border border-slate-100 rounded-xl overflow-hidden transition-all">
             <div
                 onClick={() => setIsExpanded(!isExpanded)}
-                className={`p-4 pl-12 flex items-center justify-between cursor-pointer transition-colors select-none ${isExpanded ? "bg-slate-50/50" : "hover:bg-slate-50/30"}`}
+                className={`p-3 sm:p-4 pl-3 sm:pl-12 flex items-start sm:items-center justify-between gap-2.5 sm:gap-4 cursor-pointer transition-colors select-none ${isExpanded ? "bg-slate-50/50" : "hover:bg-slate-50/30"}`}
             >
-                <div className="flex items-center gap-4">
-                    <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-100 text-indigo-600 shrink-0">
+                <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+                    <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-100 text-indigo-600 shrink-0 mt-0.5 sm:mt-0">
                         <Brain size={18} />
                     </div>
                     <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-slate-800">
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                            <span className="font-bold text-sm sm:text-base text-slate-800">
                                 {solverType} Weights
                             </span>
                             {isShared && (
@@ -290,8 +290,8 @@ export default function ModelNode({
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
+                <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 mt-0.5 sm:mt-0">
+                    <span className="text-[11px] sm:text-xs font-bold px-2 sm:px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full border border-slate-200">
                         {linkedEvals.length}{" "}
                         {linkedEvals.length === 1 ? "Plot" : "Plots"}
                     </span>
@@ -304,14 +304,14 @@ export default function ModelNode({
             </div>
 
             {isExpanded && (
-                <div className="bg-slate-50/20 p-4 flex flex-col gap-3 animate-in slide-in-from-top-1 duration-150">
+                <div className="bg-slate-50/20 p-2.5 sm:p-4 flex flex-col gap-3 animate-in slide-in-from-top-1 duration-150">
                     <ConfigGrid
                         title="Architecture & Training Configuration"
                         configObj={sanitizedSolver}
                     />
 
-                    {/* ACTIONS ROW */}
-                    <div className="flex justify-end items-start gap-2 my-1">
+                    {/* ACTIONS ROW - Wrap buttons cleanly on narrow screens */}
+                    <div className="flex flex-wrap justify-end items-start gap-2 my-1">
                         {/* Standard Sync Button */}
                         {isShared && !isLocal && serverIsConnected && (
                             <SyncWorkspaceButton
@@ -327,7 +327,7 @@ export default function ModelNode({
                                 <button
                                     onClick={handleFineTuneAction}
                                     disabled={isSyncing}
-                                    className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-lg shadow-sm transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                                    className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-lg shadow-sm transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                                     title={
                                         isLocal
                                             ? "Load this configuration for fine-tuning or cloning"
@@ -367,7 +367,6 @@ export default function ModelNode({
 
                         {isLocal && (
                             <div className="pt-0">
-                                {" "}
                                 {/* Wrapper to align perfectly with the button row */}
                                 <DeleteButton
                                     targetHash={modelHash}
@@ -380,7 +379,7 @@ export default function ModelNode({
                     </div>
 
                     {linkedEvals.length === 0 ? (
-                        <p className="text-[11px] font-medium text-slate-400 italic pl-8 py-1">
+                        <p className="text-[11px] font-medium text-slate-400 italic pl-4 sm:pl-8 py-1">
                             No zero-shot evaluations generated for this weights
                             configuration.
                         </p>

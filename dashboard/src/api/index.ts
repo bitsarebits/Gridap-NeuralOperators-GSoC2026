@@ -14,9 +14,10 @@ import type {
 const FIREBASE_PROJECT_ID = "gridap-gsoc2026";
 const FIRESTORE_API_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/shared_experiments`;
 
-// Base instance for Axios
+// Base instance for Axios using relative paths so it works seamlessly
+// on localhost, LAN IP, VS Code Web Tunnels (via Vite proxy), and Oxygen.jl static hosting.
 export const api = axios.create({
-    baseURL: "http://localhost:8080",
+    baseURL: "",
     headers: {
         "Content-Type": "application/json",
     },

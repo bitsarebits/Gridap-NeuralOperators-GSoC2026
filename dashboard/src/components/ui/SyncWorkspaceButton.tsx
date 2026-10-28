@@ -49,15 +49,15 @@ export default function SyncWorkspaceButton({
             <button
                 onClick={handleSync}
                 disabled={isSyncing}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg font-semibold transition-all shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg font-semibold transition-all shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
                 title="Download required files to your local DrWatson folders"
             >
                 {isSyncing ? (
-                    <Loader2 size={18} className="animate-spin" />
+                    <Loader2 size={16} className="animate-spin shrink-0" />
                 ) : (
-                    <DownloadCloud size={18} />
+                    <DownloadCloud size={16} className="shrink-0" />
                 )}
-                {isSyncing ? "Syncing..." : buttonLabel}
+                <span>{isSyncing ? "Syncing..." : buttonLabel}</span>
             </button>
 
             {error && (

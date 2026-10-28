@@ -87,23 +87,36 @@ export default function EvaluationNode({
             try {
                 if (isLocal) {
                     if (!serverIsConnected) {
-                        throw new Error("Connect to the Julia server to load this evaluation.");
+                        throw new Error(
+                            "Connect to the Julia server to load this evaluation.",
+                        );
                     }
                     const res = await fetchEvaluationPlot(evalHash, solverType);
                     if (res.status !== "success" || !res.eval_data) {
-                        throw new Error(res.message || "Interactive evaluation JSON not found.");
+                        throw new Error(
+                            res.message ||
+                                "Interactive evaluation JSON not found.",
+                        );
                     }
                     setEvalData(res.eval_data);
                 } else {
                     if (!evalObj.eval_url) {
-                        throw new Error("Evaluation JSON URL is missing from the shared registry.");
+                        throw new Error(
+                            "Evaluation JSON URL is missing from the shared registry.",
+                        );
                     }
-                    const cloudData = await fetchCloudEvaluationJson(evalObj.eval_url);
+                    const cloudData = await fetchCloudEvaluationJson(
+                        evalObj.eval_url,
+                    );
                     setEvalData(cloudData);
                 }
             } catch (err) {
                 console.error("Failed to load evaluation:", err);
-                setError(err instanceof Error ? err.message : "Failed to fetch evaluation JSON.");
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : "Failed to fetch evaluation JSON.",
+                );
             } finally {
                 setIsLoading(false);
             }
@@ -134,9 +147,9 @@ export default function EvaluationNode({
         <div className="border border-slate-100 bg-white rounded-lg overflow-hidden shadow-2xs">
             <div
                 onClick={toggleExpansion}
-                className="p-3 flex items-center justify-between text-xs cursor-pointer hover:bg-slate-50/60 select-none"
+                className="p-2.5 sm:p-3 flex items-center justify-between gap-2 text-xs cursor-pointer hover:bg-slate-50/60 select-none"
             >
-                <div className="flex items-center gap-2.5 pl-4">
+                <div className="flex items-center flex-wrap gap-1.5 sm:gap-2.5 pl-1 sm:pl-4 min-w-0">
                     {/* Arena Selection Checkbox */}
                     {showArenaButton && onToggleArena && (
                         <button
@@ -165,7 +178,7 @@ export default function EvaluationNode({
                         </button>
                     )}
 
-                    <LineChart size={14} className="text-amber-600" />
+                    <LineChart size={14} className="text-amber-600 shrink-0" />
                     <span className="font-semibold text-slate-700">
                         Zero-Shot Report (σ_test: {sigmaTest})
                     </span>
@@ -183,8 +196,8 @@ export default function EvaluationNode({
                         {evalHash}
                     </span>
                 </div>
-                <div className="flex items-center gap-1 text-slate-400">
-                    <span className="text-[10px] mr-2">
+                <div className="flex items-center gap-1 text-slate-400 shrink-0">
+                    <span className="text-[10px] mr-2 hidden sm:inline">
                         Click to inspect evaluation
                     </span>
                     {isExpanded ? (
@@ -196,7 +209,7 @@ export default function EvaluationNode({
             </div>
 
             {isExpanded && (
-                <div className="border-t border-slate-100 bg-slate-50/50 p-4 flex flex-col items-center gap-3 animate-in fade-in duration-200">
+                <div className="border-t border-slate-100 bg-slate-50/50 p-2.5 sm:p-4 flex flex-col items-center gap-3 animate-in fade-in duration-200">
                     {isLoading ? (
                         <div className="flex items-center gap-2 py-6 text-xs font-medium text-slate-500">
                             <Loader2
@@ -213,7 +226,7 @@ export default function EvaluationNode({
                                     compact={true}
                                 />
                             </div>
-                            <div className="w-full flex justify-end items-center gap-2 mt-2">
+                            <div className="w-full flex flex-wrap justify-end items-center gap-2 mt-2">
                                 {isShared && serverIsConnected && (
                                     <DeleteButton
                                         targetHash={evalHash}
@@ -248,9 +261,11 @@ export default function EvaluationNode({
                         </>
                     ) : (
                         <div className="text-xs text-red-500 font-medium py-4 flex items-center gap-1">
-                            <AlertCircle size={14} />{" "}
-                            {error ||
-                                `The evaluation file for '${evalHash}' was not found.`}
+                            <AlertCircle size={14} className="shrink-0" />{" "}
+                            <span>
+                                {error ||
+                                    `The evaluation file for '${evalHash}' was not found.`}
+                            </span>
                         </div>
                     )}
                 </div>

@@ -25,17 +25,23 @@ function Accordion({
             className="group border border-slate-200 rounded-xl bg-white shadow-sm mb-4"
             open={defaultOpen}
         >
-            <summary className="flex items-center justify-between cursor-pointer p-5 font-bold text-slate-800 hover:bg-slate-50 transition-colors rounded-xl group-open:rounded-b-none group-open:border-b border-slate-200 select-none">
-                <div className="flex items-center gap-3">
-                    {Icon && <Icon className="text-blue-600" size={20} />}
-                    <span className="text-lg">{title}</span>
+            <summary className="flex items-center justify-between gap-2 cursor-pointer p-4 sm:p-5 font-bold text-slate-800 hover:bg-slate-50 transition-colors rounded-xl group-open:rounded-b-none group-open:border-b border-slate-200 select-none">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                    {Icon && (
+                        <Icon className="text-blue-600 shrink-0" size={20} />
+                    )}
+                    <span className="text-base sm:text-lg leading-snug">
+                        {title}
+                    </span>
                 </div>
                 <ChevronDown
-                    className="text-slate-400 transition-transform duration-300 group-open:-rotate-180"
+                    className="text-slate-400 transition-transform duration-300 group-open:-rotate-180 shrink-0"
                     size={20}
                 />
             </summary>
-            <div className="p-6 text-slate-600 space-y-4">{children}</div>
+            <div className="p-4 sm:p-6 text-sm sm:text-base text-slate-600 space-y-4">
+                {children}
+            </div>
         </details>
     );
 }
@@ -44,17 +50,17 @@ export default function DocsView() {
     return (
         <div className="w-full max-w-5xl mx-auto">
             {/* Header & Credits */}
-            <header className="mb-8 p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
-                <h1 className="text-3xl font-extrabold text-slate-900 mb-4">
+            <header className="mb-6 sm:mb-8 p-5 sm:p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-3 sm:mb-4">
                     Dashboard Documentation
                 </h1>
-                <p className="text-lg text-slate-600 mb-6">
+                <p className="text-base sm:text-lg text-slate-600 mb-5 sm:mb-6">
                     Welcome to the <strong>GridapROMs Orchestrator</strong>.
                     This interface is designed to configure, run, and evaluate
                     High-Fidelity Finite Element (FE) simulations and Neural
                     Operator training pipelines directly from your browser.
                 </p>
-                <div className="bg-slate-50 border-l-4 border-slate-300 p-4 rounded-r-lg text-sm text-slate-700">
+                <div className="bg-slate-50 border-l-4 border-slate-300 p-3.5 sm:p-4 rounded-r-lg text-xs sm:text-sm text-slate-700">
                     <strong className="block text-slate-800 mb-1">
                         References & Credits
                     </strong>
@@ -163,7 +169,7 @@ export default function DocsView() {
                     the movement of a quantity over time and space:
                 </p>
 
-                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 my-4 font-mono text-center text-slate-800 flex flex-col gap-2">
+                <div className="bg-slate-50 p-3.5 sm:p-4 rounded-lg border border-slate-200 my-4 font-mono text-xs sm:text-base text-center text-slate-800 flex flex-col gap-2 overflow-x-auto">
                     <span>
                         ∂<sub>t</sub>u(x,t) + c ∂<sub>x</sub>u(x,t) = 0,
                         &nbsp;&nbsp; (x,t) ∈ ℝ × (0, T)
@@ -185,7 +191,7 @@ export default function DocsView() {
                     is a Gaussian pulse governed by its variance{" "}
                     <strong>σ</strong>:
                 </p>
-                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 my-4 font-mono text-center text-slate-800 text-lg">
+                <div className="bg-slate-50 p-3.5 sm:p-4 rounded-lg border border-slate-200 my-4 font-mono text-center text-slate-800 text-sm sm:text-lg overflow-x-auto">
                     u<sub>0</sub>(x) = (1 / √(2πσ)) e<sup>-x² / 2σ</sup>
                 </div>
 
@@ -193,7 +199,7 @@ export default function DocsView() {
                     We map this variance via the parameter <strong>β</strong>{" "}
                     (where σ = 10<sup>-β</sup>).
                 </p>
-                <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg text-blue-900 mt-4 text-sm">
+                <div className="bg-blue-50 border border-blue-100 p-3.5 sm:p-4 rounded-lg text-blue-900 mt-4 text-xs sm:text-sm">
                     <strong>Why this specific problem?</strong> As Quarteroni
                     notes, the reducibility of this problem heavily depends on
                     the variance. Depending on the value of σ, eigenvalues of
@@ -218,7 +224,7 @@ export default function DocsView() {
                     </code>
                     .
                 </p>
-                <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-sm">
+                <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-4 text-xs sm:text-sm">
                     <li>
                         <strong>beta_start / beta_end / step:</strong> Define
                         the parameter space grid for generating snapshots. σ
@@ -269,7 +275,7 @@ export default function DocsView() {
                 </p>
 
                 {/* Schematic */}
-                <div className="bg-slate-800 text-green-400 p-4 rounded-lg font-mono text-xs sm:text-sm my-4 overflow-x-auto whitespace-pre">
+                <div className="bg-slate-800 text-green-400 p-3.5 sm:p-4 rounded-lg font-mono text-xs sm:text-sm my-4 overflow-x-auto whitespace-pre">
                     {`Input Space ──[ Lift ]──> [ Fourier Layer 1...N ] ──[ Project ]──> Output Space
                                      │
                         (FFT ──> Truncate Modes ──> IFFT)`}
@@ -278,7 +284,7 @@ export default function DocsView() {
                 <h4 className="font-bold text-slate-800 mt-6 mb-2 border-b pb-1">
                     FNO Architecture & Parameters
                 </h4>
-                <ul className="space-y-2 text-sm">
+                <ul className="space-y-2 text-xs sm:text-sm">
                     <li>
                         <strong>batch_size:</strong> Defines the number of
                         parameter scenarios processed at once. Passing the full
@@ -316,7 +322,7 @@ export default function DocsView() {
                 </p>
 
                 {/* Schematic */}
-                <div className="bg-slate-800 text-green-400 p-4 rounded-lg font-mono text-xs sm:text-sm my-4 overflow-x-auto whitespace-pre">
+                <div className="bg-slate-800 text-green-400 p-3.5 sm:p-4 rounded-lg font-mono text-xs sm:text-sm my-4 overflow-x-auto whitespace-pre">
                     {`Sensors u(x) ────[ Branch Net ]────> β (p_latent) ──╮
                                                               (Dot Product) ──> u(x,t)
 Coords (x, t) ───[ Trunk Net  ]────> t (p_latent) ──╯`}
@@ -325,7 +331,7 @@ Coords (x, t) ───[ Trunk Net  ]────> t (p_latent) ──╯`}
                 <h4 className="font-bold text-slate-800 mt-6 mb-2 border-b pb-1">
                     DeepONet Architecture & Parameters
                 </h4>
-                <ul className="space-y-2 text-sm">
+                <ul className="space-y-2 text-xs sm:text-sm">
                     <li>
                         <strong>batch_size:</strong> Defines the number of
                         parameter scenarios processed at once. Defaults to 0
@@ -365,7 +371,7 @@ Coords (x, t) ───[ Trunk Net  ]────> t (p_latent) ──╯`}
                 </p>
 
                 {/* Schematic */}
-                <div className="bg-slate-800 text-green-400 p-4 rounded-lg font-mono text-xs sm:text-sm my-4 overflow-x-auto whitespace-pre">
+                <div className="bg-slate-800 text-green-400 p-3.5 sm:p-4 rounded-lg font-mono text-xs sm:text-sm my-4 overflow-x-auto whitespace-pre">
                     {`Sensors u(x) ──[ Encoder ]──> β (p_latent) ──╮
                                                  [ Concat ] ──[ Decoder ] ──> u(x,t)
 Coords (x, t) ─────────────────────────────────╯`}
@@ -374,7 +380,7 @@ Coords (x, t) ──────────────────────
                 <h4 className="font-bold text-slate-800 mt-6 mb-2 border-b pb-1">
                     NOMAD Architecture & Parameters
                 </h4>
-                <ul className="space-y-2 text-sm">
+                <ul className="space-y-2 text-xs sm:text-sm">
                     <li>
                         <strong>batch_size:</strong> Works on a strict
                         point-level basis. A batch size of 2048 means passing
@@ -404,7 +410,7 @@ Coords (x, t) ──────────────────────
                     exploratory phase, several architectural settings are
                     hardcoded in the Julia backend configuration:
                 </p>
-                <ul className="list-disc list-inside space-y-2 mt-4 text-sm">
+                <ul className="list-disc list-inside space-y-2 mt-4 text-xs sm:text-sm">
                     <li>
                         <strong>Loss Function:</strong> Fixed to Mean Squared
                         Error (MSELoss).
@@ -414,7 +420,7 @@ Coords (x, t) ──────────────────────
                     </li>
                     <li>
                         <strong>Activation Functions:</strong>
-                        <ul className="list-[circle] list-inside ml-6 mt-1 text-slate-500">
+                        <ul className="list-[circle] list-inside ml-4 sm:ml-6 mt-1 text-slate-500">
                             <li>
                                 FNO & NOMAD:{" "}
                                 <code className="bg-slate-100 px-1 rounded text-slate-800">
@@ -446,10 +452,10 @@ Coords (x, t) ──────────────────────
                 <h4 className="font-bold text-slate-800 mt-6 mb-2 border-b pb-1">
                     Configurable Learning Rate Schedulers
                 </h4>
-                <p className="text-sm">
+                <p className="text-xs sm:text-sm">
                     You can select the scheduling policy directly from the UI:
                 </p>
-                <ul className="space-y-2 text-sm mt-2">
+                <ul className="space-y-2 text-xs sm:text-sm mt-2">
                     <li>
                         <strong>Cosine Annealing:</strong> Decreases the
                         learning rate smoothly from <em>lr_max</em> to{" "}

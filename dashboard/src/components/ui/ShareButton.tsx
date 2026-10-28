@@ -66,16 +66,16 @@ export default function ShareButton({ evalHash }: ShareButtonProps) {
 
     if (publicUrl) {
         return (
-            <div className="flex items-center gap-3 bg-green-50 text-green-700 px-4 py-2 rounded-lg border border-green-200">
-                <CheckCircle size={18} />
-                <span className="text-sm font-medium">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 bg-green-50 text-green-700 px-3 sm:px-4 py-2 rounded-lg border border-green-200">
+                <CheckCircle size={16} className="shrink-0" />
+                <span className="text-xs sm:text-sm font-medium">
                     {alreadyExists ? "Already Public!" : "Published!"}
                 </span>
                 <a
                     href={publicUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-sm bg-white px-2 py-1 rounded shadow-sm hover:bg-green-100 transition-colors ml-2"
+                    className="flex items-center gap-1 text-xs sm:text-sm bg-white px-2 py-1 rounded shadow-sm hover:bg-green-100 transition-colors"
                 >
                     View Image <ExternalLink size={14} />
                 </a>
@@ -88,15 +88,15 @@ export default function ShareButton({ evalHash }: ShareButtonProps) {
             <button
                 onClick={handleShare}
                 disabled={isSharing}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-all shadow-sm hover:shadow disabled:opacity-70 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-all shadow-sm hover:shadow disabled:opacity-70 disabled:cursor-not-allowed"
                 title="Publish securely to global Firebase gallery"
             >
                 {isSharing ? (
-                    <Loader2 size={18} className="animate-spin" />
+                    <Loader2 size={16} className="animate-spin shrink-0" />
                 ) : (
-                    <Share2 size={18} />
+                    <Share2 size={16} className="shrink-0" />
                 )}
-                {isSharing ? "Publishing..." : "Share to Gallery"}
+                <span>{isSharing ? "Publishing..." : "Share to Gallery"}</span>
             </button>
 
             {error && (

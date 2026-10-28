@@ -262,7 +262,7 @@ export default function ConfigGrid({ title, configObj }: ConfigGridProps) {
                 k.endsWith(`_${orderKey}`),
             );
             if (endingIdx !== -1) return endingIdx;
-            return 999; // Chiavi non mappate vanno in fondo
+            return 999; // Unmapped keys are placed at the end
         };
         const rankA = getRank(a);
         const rankB = getRank(b);
@@ -271,18 +271,18 @@ export default function ConfigGrid({ title, configObj }: ConfigGridProps) {
     });
 
     return (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 shadow-xs">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2 mb-4 border-b pb-2">
-                <Settings2 size={14} className="text-slate-400" />
-                {title}
+        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 mb-2 sm:mb-4 shadow-xs">
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2 mb-3 sm:mb-4 border-b pb-2">
+                <Settings2 size={14} className="text-slate-400 shrink-0" />
+                <span>{title}</span>
             </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-y-4 gap-x-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-y-3 sm:gap-y-4 gap-x-3 sm:gap-x-4">
                 {sortedKeys.map((k) => (
-                    <div key={k} className="flex flex-col">
+                    <div key={k} className="flex flex-col min-w-0">
                         <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center flex-wrap">
                             {formatLabel(k)}
                         </span>
-                        <span className="text-[13px] font-semibold text-slate-800 font-mono mt-0.5">
+                        <span className="text-xs sm:text-[13px] font-semibold text-slate-800 font-mono mt-0.5 wrap-break-words">
                             {formatValue(k, flatConfig[k])}
                         </span>
                     </div>

@@ -93,7 +93,7 @@ export default function RegistryCatalog({
         return (
             <div className="flex flex-col items-center justify-center py-20 gap-4 w-full max-w-5xl">
                 <Loader2 size={40} className="animate-spin text-slate-600" />
-                <p className="text-slate-500 font-medium">
+                <p className="text-slate-500 font-medium text-sm sm:text-base text-center px-4">
                     Syncing local cache and cloud gallery...
                 </p>
             </div>
@@ -102,7 +102,7 @@ export default function RegistryCatalog({
 
     if (error) {
         return (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 flex items-center gap-3 rounded-xl">
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 flex items-center gap-3 rounded-xl w-full max-w-5xl">
                 <AlertCircle className="text-red-500 shrink-0" />
                 <p className="text-red-700 text-sm font-medium">
                     Failed to sync registry.
@@ -119,33 +119,39 @@ export default function RegistryCatalog({
     const referenceArenaCandidate = arenaCandidates[0] ?? null;
 
     return (
-        <div className="flex flex-col gap-6 w-full max-w-5xl animate-in fade-in duration-300">
+        <div className="flex flex-col gap-4 sm:gap-6 w-full max-w-5xl animate-in fade-in duration-300 pb-20 sm:pb-8">
             {/* Catalog Header Card */}
             <div className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                <div className="p-6 flex justify-between items-center bg-white">
+                <div className="p-4 sm:p-6 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-white">
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                            <Database className="text-blue-600" size={24} />
-                            Simulation Registry Catalog
+                        <h1 className="text-xl sm:text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <Database
+                                className="text-blue-600 shrink-0"
+                                size={24}
+                            />
+                            <span>Simulation Registry Catalog</span>
                         </h1>
-                        <p className="text-slate-500 text-sm mt-1">
+                        <p className="text-slate-500 text-xs sm:text-sm mt-1">
                             Cached high-fidelity FEM snapshots, neural operators
                             weights, and zero-shot evaluations.
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
                         <button
                             type="button"
                             onClick={() => setShowFilters(!showFilters)}
-                            className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition-colors flex items-center gap-2 ${
+                            className={`flex-1 sm:flex-initial justify-center px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-colors flex items-center gap-2 ${
                                 activeFilterCount > 0
                                     ? "bg-blue-50 border-blue-200 text-blue-700"
                                     : "border-slate-200 text-slate-600 hover:bg-slate-50"
                             }`}
                         >
                             <Filter size={16} />
-                            Filters{" "}
-                            {activeFilterCount > 0 && `(${activeFilterCount})`}
+                            <span>
+                                Filters{" "}
+                                {activeFilterCount > 0 &&
+                                    `(${activeFilterCount})`}
+                            </span>
                             {showFilters ? (
                                 <ChevronUp size={16} />
                             ) : (
@@ -156,18 +162,20 @@ export default function RegistryCatalog({
                             type="button"
                             onClick={() => refetch()}
                             disabled={isRefetching}
-                            className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors flex items-center gap-2 text-sm font-semibold disabled:opacity-50"
+                            className="flex-1 sm:flex-initial justify-center p-2 sm:p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors flex items-center gap-2 text-xs sm:text-sm font-semibold disabled:opacity-50"
                         >
                             <RefreshCw
                                 size={16}
                                 className={isRefetching ? "animate-spin" : ""}
                             />
-                            {isRefetching ? "Syncing..." : "Refresh"}
+                            <span>
+                                {isRefetching ? "Syncing..." : "Refresh"}
+                            </span>
                         </button>
                     </div>
                 </div>
 
-                {/* Il FilterPanel è ora un blocco nel normale document flow */}
+                {/* FilterPanel rendered in normal document flow */}
                 {showFilters && (
                     <FilterPanel
                         filters={filters}
@@ -180,16 +188,16 @@ export default function RegistryCatalog({
             {arenaSelectionError && (
                 <div
                     role="alert"
-                    className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900"
+                    className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs sm:text-sm font-medium text-amber-900"
                 >
                     {arenaSelectionError}
                 </div>
             )}
 
             {!hasData && (
-                <div className="text-center bg-white border border-dashed border-slate-200 rounded-2xl p-16 flex flex-col items-center">
+                <div className="text-center bg-white border border-dashed border-slate-200 rounded-2xl p-8 sm:p-16 flex flex-col items-center">
                     <Hash size={48} className="text-slate-300 mb-3" />
-                    <p className="text-slate-600 font-semibold text-lg">
+                    <p className="text-slate-600 font-semibold text-base sm:text-lg">
                         {activeFilterCount > 0
                             ? "No simulations match your exact parameters."
                             : "No simulations found."}
@@ -212,12 +220,12 @@ export default function RegistryCatalog({
                     />
                 ))}
 
-            {/* Floating Arena Action Bar */}
+            {/* Floating Arena Action Bar - Responsive width on mobile */}
             {arenaCandidates.length > 0 && (
-                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white px-6 py-3.5 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-6 animate-in slide-in-from-bottom-4">
-                    <div className="flex items-center gap-2.5">
-                        <Trophy size={18} className="text-amber-400" />
-                        <span className="text-sm font-bold">
+                <div className="fixed bottom-4 sm:bottom-6 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-40 bg-slate-900 text-white px-4 sm:px-6 py-3 sm:py-3.5 rounded-2xl shadow-2xl border border-slate-700 flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-start gap-3 sm:gap-6 animate-in slide-in-from-bottom-4">
+                    <div className="flex items-center gap-2">
+                        <Trophy size={18} className="text-amber-400 shrink-0" />
+                        <span className="text-xs sm:text-sm font-bold">
                             {arenaCandidates.length}{" "}
                             {arenaCandidates.length === 1
                                 ? "Evaluation"
@@ -225,12 +233,12 @@ export default function RegistryCatalog({
                             Selected
                         </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 ml-auto sm:ml-0">
                         <button
                             type="button"
                             disabled={arenaCandidates.length < 2}
                             onClick={() => setIsArenaOpen(true)}
-                            className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                            className="px-3.5 sm:px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                         >
                             Compare in Arena
                         </button>
