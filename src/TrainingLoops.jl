@@ -9,6 +9,15 @@ export train_deeponet!, train_fno!, train_nomad!, prepare_and_train
 
 # ================= HELPERS =================
 
+@inline function check_cancelled(should_stop, location::AbstractString)
+    if should_stop()
+        @info "Cancellation observed by training loop" location
+        throw(InterruptException())
+    end
+
+    return nothing
+end
+
 """
     format_eta(eta_seconds::Real) -> String
 
@@ -71,7 +80,8 @@ function train_deeponet!(
     lr_scheduler
     ;
     epochs=5000,
-    log_cb=(x)->nothing
+    log_cb=(x)->nothing,
+    should_stop=()->false
 )
     println("--- Starting Training on Reactant Device ---")
     println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
@@ -85,10 +95,13 @@ function train_deeponet!(
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
             local current_loss = 0.0f0
+            check_cancelled(should_stop, "epoch $epoch: start")
 
             for (f_batch, u_batch) in dataloader
                 # Yield allows Julia to catch InterruptException thrown by the WebSocket
+                check_cancelled(should_stop, "epoch $epoch: before batch")
                 yield()
+                check_cancelled(should_stop, "epoch $epoch: after yield")
 
                 # The trunk input (x_data_dev) remains constant across parameter batches
                 batch_dev = ((f_batch |> XDEV, x_data_dev), u_batch |> XDEV)
@@ -96,6 +109,7 @@ function train_deeponet!(
                 _, loss_val, _, train_state = Training.single_train_step!(
                     AutoEnzyme(), MSELoss(), batch_dev, train_state; return_gradients=Val(false)
                 )
+                check_cancelled(should_stop, "epoch $epoch: after training step")
                 current_loss += Float32(loss_val)
             end
             current_loss /= length(dataloader)
@@ -166,7 +180,8 @@ function train_fno!(
     lr_scheduler
     ;
     epochs=10000,
-    log_cb=(x)->nothing
+    log_cb=(x)->nothing,
+    should_stop=()->false
 )
     println("--- Starting FNO Training on Reactant Device ---")
     println("(The first epoch will trigger XLA/Enzyme compilation and may take a few minutes)")
@@ -180,11 +195,15 @@ function train_fno!(
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
             local current_loss = 0.0f0
+            check_cancelled(should_stop, "epoch $epoch: start")
+
 
             # Iterate over the batches in the dataloader
             for batch in dataloader
                 # Yield allows Julia to catch InterruptException thrown by the WebSocket
+                check_cancelled(should_stop, "epoch $epoch: before batch")
                 yield()
+                check_cancelled(should_stop, "epoch $epoch: after yield")
 
                 # Move the mini-batch to the XLA device
                 batch_dev = batch |> XDEV
@@ -192,6 +211,7 @@ function train_fno!(
                 _, loss_val, _, train_state = Training.single_train_step!(
                     AutoEnzyme(), MSELoss(), batch_dev, train_state; return_gradients=Val(false)
                 )
+                check_cancelled(should_stop, "epoch $epoch: after training step")
                 current_loss += Float32(loss_val)
             end
             current_loss /= length(dataloader)
@@ -262,7 +282,8 @@ function train_nomad!(
     lr_scheduler
     ;
     epochs=10000,
-    log_cb=(x)->nothing
+    log_cb=(x)->nothing,
+    should_stop=()->false
 )
     println("--- Starting NOMAD Training on Reactant Device ---")
     log_cb(Dict("type" => "status", "stage" => "XLA JIT Compilation running (may take a few minutes)..."))
@@ -275,10 +296,14 @@ function train_nomad!(
     Reactant.with_config(; dot_general_precision=PrecisionConfig.HIGH) do
         for epoch in 1:epochs
             local current_loss = 0.0f0
+            check_cancelled(should_stop, "epoch $epoch: start")
 
             for batch in dataloader
                 # Yield allows Julia to catch InterruptException thrown by the WebSocket
+                check_cancelled(should_stop, "epoch $epoch: before batch")
                 yield()
+                check_cancelled(should_stop, "epoch $epoch: after yield")
+
                 batch_dev = (
                     (batch[1][1] |> XDEV, batch[1][2] |> XDEV),
                     batch[2] |> XDEV
@@ -287,6 +312,7 @@ function train_nomad!(
                 _, loss_val, _, train_state = Training.single_train_step!(
                     AutoEnzyme(), MSELoss(), batch_dev, train_state; return_gradients=Val(false)
                 )
+                check_cancelled(should_stop, "epoch $epoch: after training step")
                 current_loss += Float32(loss_val)
             end
             current_loss /= length(dataloader)
@@ -354,7 +380,8 @@ function prepare_and_train(
     fem_data::Dict,
     lr_scheduler
     ;
-    log_cb=(x)->nothing
+    log_cb=(x)->nothing,
+    should_stop=()->false
 )
     # Extract structural configs
     n_epochs = solver.epochs
@@ -431,6 +458,8 @@ function prepare_and_train(
     println("Using DataLoader      : Batch Size = $bs / $N_sigma parameters.")
     println("==============================\n")
 
+    check_cancelled(should_stop, "prepare_and_train: before device transfer")
+
     # DataLoader and Tensors setup
     dataloader = DataLoader((f_train, u_train); batchsize=bs, shuffle=true, partial=false)
     x_data_dev = x_train |> XDEV
@@ -465,7 +494,7 @@ function prepare_and_train(
     # @time shows how long the compilation + execution took
     @time ps_trained, st_trained, loss_history = train_deeponet!(
         train_state, dataloader, x_data_dev, lr_scheduler;
-        epochs=n_epochs, log_cb=log_cb
+        epochs=n_epochs, log_cb=log_cb, should_stop=should_stop
     )
 
     return ps_trained |> CDEV, st_trained |> CDEV, Float32(max_u), loss_history
@@ -483,7 +512,8 @@ function prepare_and_train(
     fem_data::Dict,
     lr_scheduler
     ;
-    log_cb=(x)->nothing
+    log_cb=(x)->nothing,
+    should_stop=()->false
 )
     n_epochs = solver.epochs
     nx_red = solver.nx_red
@@ -531,6 +561,8 @@ function prepare_and_train(
     println("DataLoader    : Batch Size = $bs / $N_sigma parameters.")
     println("=========================\n")
 
+    check_cancelled(should_stop, "prepare_and_train: before device transfer")
+
     # Architecture Initialization
     fno = FNOArch.build_fno(
         in_channels=1,
@@ -569,7 +601,7 @@ function prepare_and_train(
 
     @time ps_trained, st_trained, loss_history = train_fno!(
         train_state, dataloader, lr_scheduler;
-        epochs=n_epochs, log_cb=log_cb
+        epochs=n_epochs, log_cb=log_cb, should_stop=should_stop
     )
 
     return ps_trained |> CDEV, st_trained |> CDEV, Float32(max_u), loss_history
@@ -586,7 +618,8 @@ function prepare_and_train(
     fem_data::Dict,
     lr_scheduler
     ;
-    log_cb=(x)->nothing
+    log_cb=(x)->nothing,
+    should_stop=()->false
 )
     n_epochs = solver.epochs
     step_x = solver.step_x
@@ -651,6 +684,8 @@ function prepare_and_train(
     println("DataLoader           : Batch Size = $bs / $N_tot spatial-temporal samples.")
     println("===========================\n")
 
+    check_cancelled(should_stop, "prepare_and_train: before device transfer")
+
     nomad_net = NOMADArch.build_nomad(
         m_sensors=m_sensors, p_latent=solver.p_latent, hidden=solver.hidden
     )
@@ -684,7 +719,7 @@ function prepare_and_train(
     train_state = Training.TrainState(nomad_net, ps, st, opt)
 
     @time ps_trained, st_trained, loss_history = train_nomad!(
-        train_state, dataloader, lr_scheduler; epochs=n_epochs, log_cb=log_cb
+        train_state, dataloader, lr_scheduler; epochs=n_epochs, log_cb=log_cb, should_stop=should_stop
     )
 
     return ps_trained |> CDEV, st_trained |> CDEV, Float32(max_u), loss_history

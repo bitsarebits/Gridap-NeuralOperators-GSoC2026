@@ -134,6 +134,7 @@ export default function OrchestratorView({
         startSimulation,
         abortSimulation,
         clearResult,
+        isAborting,
     } = useSimulationSocket(serverStatus);
 
     // Effects
@@ -386,10 +387,13 @@ export default function OrchestratorView({
                                 <button
                                     type="button"
                                     onClick={abortSimulation}
-                                    className="w-full lg:w-auto font-bold py-4 px-8 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg bg-red-600 hover:bg-red-700 text-white hover:shadow-red-500/30 shrink-0 cursor-pointer"
+                                    disabled={isAborting}
+                                    className="w-full lg:w-auto font-bold py-4 px-8 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white hover:shadow-red-500/30 shrink-0 cursor-pointer"
                                 >
                                     <XCircle size={20} />
-                                    Abort Pipeline
+                                    {isAborting
+                                        ? "Aborting Pipeline..."
+                                        : "Abort Pipeline"}
                                 </button>
                             ) : (
                                 <button

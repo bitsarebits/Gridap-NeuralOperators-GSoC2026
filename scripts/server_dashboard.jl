@@ -46,12 +46,15 @@ const ACTIVE_TASKS = Dict{String,Task}()
 # PRODUCER CHANNEL
 # Keep track of the message queues for each session (Buffer: 1000 messages)
 const SESSION_CHANNELS = Dict{String,Channel{String}}()
+const SESSION_CANCEL_FLAGS = Dict{String,Threads.Atomic{Bool}}()
 
 # CONSUMER (light task, from channel to webSocket)
 # Killed when web task get killed or refreshed, new one created for the new WebSocket
 # Keep track of the WebSocket sender tasks to ensure type-stability
 const SENDER_TASKS = Dict{String,Task}()
 
+# Replayable status and progress events for active sessions.
+const SESSION_HISTORY = Dict{String,Vector{String}}()
 
 # Global Thread-Safe Flag for Shutdown state
 const IS_SHUTTING_DOWN = Threads.Atomic{Bool}(false)
@@ -173,8 +176,27 @@ end
     return JSON3.write(Dict("status" => "ok", "message" => "Julia Backend Ready"))
 end
 
+function start_session_sender(
+    ws::HTTP.WebSocket,
+    ch::Channel{String},
+)
+    return Threads.@spawn begin
+        try
+            for log_msg in ch
+                HTTP.WebSockets.isclosed(ws) && break
+                HTTP.WebSockets.send(ws, log_msg)
+            end
+        catch
+            # The client may disconnect while messages are being sent.
+        end
+    end
+end
+
 # Endpoint WebSocket
 @websocket "/ws/simulate" function (ws::HTTP.WebSocket)
+    local sender_task = nothing
+    local session_channel = nothing
+
     # Reject connection if server is shutting down
     if IS_SHUTTING_DOWN[]
         HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "error", "message" => "Server is shutting down.")))
@@ -194,16 +216,18 @@ end
 
             # START or RECONNECT logic
             if action == "reconnect"
-                session_id = get(payload, "session_id", nothing)
+                raw_session_id = get(payload, "session_id", nothing)
+                session_id = isnothing(raw_session_id) ? nothing : String(raw_session_id)
 
-                # thread-safe control of the validity
                 is_valid = lock(STATE_LOCK) do
-                    !isnothing(session_id) && haskey(ACTIVE_TASKS, String(session_id))
+                    !isnothing(session_id) &&
+                        haskey(ACTIVE_TASKS, session_id) &&
+                        !istaskdone(ACTIVE_TASKS[session_id]) &&
+                        haskey(SESSION_CHANNELS, session_id) &&
+                        haskey(SESSION_HISTORY, session_id)
                 end
 
-                # GATEKEEPER: Check if the simulation actually exists in the current server RAM
                 if !is_valid
-                    @warn "Ghost session detected. Rejecting reconnect for dead session: $session_id"
                     HTTP.WebSockets.send(ws, JSON3.write(Dict(
                         "type" => "error",
                         "message" => "Simulation session expired or server was restarted."
@@ -211,11 +235,78 @@ end
                     return
                 end
 
-                session_id = String(session_id)
-                @info "Successfully reconnected WebSocket for active session: $session_id"
+                # Detach the previous sender, if one still exists.
+                old_sender = lock(STATE_LOCK) do
+                    old = get(SENDER_TASKS, session_id, nothing)
 
-                # Send the session ID back to the client
-                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "session_info", "session_id" => session_id)))
+                    if !isnothing(old) &&
+                        get(SENDER_TASKS, session_id, nothing) === old
+                        delete!(SENDER_TASKS, session_id)
+                    end
+
+                    old
+                end
+
+                if !isnothing(old_sender) && !istaskdone(old_sender)
+                    try
+                        Base.throwto(old_sender, InterruptException())
+                        wait(old_sender)
+                    catch
+                        # The previous sender may already have terminated.
+                    end
+                end
+
+                # Snapshot history and replace the live channel atomically.
+                reconnect_state = lock(STATE_LOCK) do
+                    task = get(ACTIVE_TASKS, session_id, nothing)
+
+                    if isnothing(task) ||
+                        istaskdone(task) ||
+                        !haskey(SESSION_CHANNELS, session_id) ||
+                        !haskey(SESSION_HISTORY, session_id)
+                        nothing
+                    else
+                        history = copy(SESSION_HISTORY[session_id])
+
+                        old_channel = SESSION_CHANNELS[session_id]
+                        new_channel = Channel{String}(1000)
+                        SESSION_CHANNELS[session_id] = new_channel
+
+                        isopen(old_channel) && close(old_channel)
+
+                        (history, new_channel)
+                    end
+                end
+
+                if isnothing(reconnect_state)
+                    HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                        "type" => "error",
+                        "message" => "Simulation session expired or server was restarted."
+                    )))
+                    return
+                end
+
+                history, session_channel = reconnect_state
+
+                HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                    "type" => "session_info",
+                    "session_id" => session_id
+                )))
+
+                # Replay every previously recorded status/progress message in order.
+                for event in history
+                    HTTP.WebSockets.isclosed(ws) && return
+                    HTTP.WebSockets.send(ws, event)
+                end
+
+                # Resume streaming messages produced after the history snapshot.
+                sender_task = start_session_sender(ws, session_channel)
+
+                lock(STATE_LOCK) do
+                    SENDER_TASKS[session_id] = sender_task
+                end
+
+                @info "Successfully reconnected WebSocket for active session: $session_id"
 
             elseif action == "start"
                 session_id = string(uuid4())
@@ -224,35 +315,73 @@ end
                 # Send the session ID back to the client immediately
                 HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "session_info", "session_id" => session_id)))
 
-                # Create Channel and Spawn Producer Task
+                local cancel_flag::Threads.Atomic{Bool}
+
+                # 1. Prepare session state and channel first
+                lock(STATE_LOCK) do
+                    for old_session in collect(keys(SESSION_HISTORY))
+                        if !haskey(ACTIVE_TASKS, old_session) &&
+                            !haskey(SENDER_TASKS, old_session)
+                            delete!(SESSION_HISTORY, old_session)
+                        end
+                    end
+
+                    SESSION_HISTORY[session_id] = String[]
+
+                    session_channel = Channel{String}(1000)
+                    SESSION_CHANNELS[session_id] = session_channel
+
+                    cancel_flag = Threads.Atomic{Bool}(false)
+                    SESSION_CANCEL_FLAGS[session_id] = cancel_flag
+                end
+
+                # 2. Start the Sender Task BEFORE spawning the producer
+                sender_task = start_session_sender(ws, session_channel)
+                lock(STATE_LOCK) do
+                    SENDER_TASKS[session_id] = sender_task
+                end
+
+                # 3. Spawn Producer Task with log_cb defined OUTSIDE try/catch
                 lock(STATE_LOCK) do
                     if !haskey(ACTIVE_TASKS, session_id)
-                        # Create a channel with a buffer of 1000 messages
-                        SESSION_CHANNELS[session_id] = Channel{String}(1000)
-
                         t = Threads.@spawn begin
-                            try
-                                # Non-blocking logger: pushes to channel, drops oldest if full
-                                log_cb = (info) -> begin
-                                    ch = lock(STATE_LOCK) do
-                                        get(SESSION_CHANNELS, session_id, nothing)
-                                    end
+                            # Definito fuori dal try così è visibile anche nel catch!
+                            log_cb = function (info)
+                                serialized = JSON3.write(info)
 
-                                    if !isnothing(ch) && isopen(ch)
+                                ch = lock(STATE_LOCK) do
+                                    history = get!(SESSION_HISTORY, session_id, String[])
+                                    push!(history, serialized)
+
+                                    get(SESSION_CHANNELS, session_id, nothing)
+                                end
+
+                                if !isnothing(ch) && isopen(ch)
+                                    try
                                         if length(ch.data) >= ch.sz_max
                                             take!(ch)
                                         end
-                                        put!(ch, JSON3.write(info))
+
+                                        put!(ch, serialized)
+                                    catch err
+                                        err isa InterruptException && rethrow()
+                                        @debug "Unable to enqueue session event" exception=(err, catch_backtrace())
                                     end
                                 end
+                            end
 
+                            try
                                 log_cb(Dict("type" => "status", "stage" => "Configuration received..."))
 
                                 fem_config, solver, eval_config = build_configs(payload["data"])
 
+                                should_stop = () -> cancel_flag[]
                                 data_hash, model_hash, eval_hash = run_pipeline(
-                                    solver, fem_config, eval_config;
-                                    log_cb=log_cb
+                                    solver,
+                                    fem_config,
+                                    eval_config;
+                                    log_cb=log_cb,
+                                    should_stop=should_stop,
                                 )
 
                                 solver_name = get_solver_name(solver)
@@ -267,29 +396,29 @@ end
                                     "eval_data" => eval_data
                                 ))
                             catch e
-                                if e isa InterruptException || (e isa TaskFailedException && occursin("InterruptException", string(e)))
-                                    # Notify the frontend that the thread stopped
-                                    lock(STATE_LOCK) do
-                                        if haskey(SESSION_CHANNELS, session_id)
-                                            put!(SESSION_CHANNELS[session_id], JSON3.write(Dict(
-                                                "type" => "error",
-                                                "message" => "Simulation interrupted by the user."
-                                            )))
-                                        end
-                                    end
+                                if e isa InterruptException ||
+                                    (e isa TaskFailedException &&
+                                    occursin("InterruptException", string(e)))
+
+                                    @info "Producer caught cancellation" session_id
+
+                                    log_cb(Dict(
+                                        "type" => "error",
+                                        "message" => "Simulation interrupted by the user."
+                                    ))
                                 else
                                     @error "Simulation failed" exception=(e, catch_backtrace())
-                                    lock(STATE_LOCK) do
-                                        if haskey(SESSION_CHANNELS, session_id)
-                                            put!(SESSION_CHANNELS[session_id], JSON3.write(Dict("type" => "error", "message" => sprint(showerror, e))))
-                                        end
-                                    end
+
+                                    log_cb(Dict(
+                                        "type" => "error",
+                                        "message" => sprint(showerror, e)
+                                    ))
                                 end
                             finally
-                                # Cleanup
+                                @info "Cleaning up simulation session" session_id
                                 lock(STATE_LOCK) do
                                     delete!(ACTIVE_TASKS, session_id)
-                                    # Close the channel to automatically terminate the sender_task loop
+                                    delete!(SESSION_CANCEL_FLAGS, session_id)
                                     if haskey(SESSION_CHANNELS, session_id)
                                         close(SESSION_CHANNELS[session_id])
                                         delete!(SESSION_CHANNELS, session_id)
@@ -301,47 +430,17 @@ end
                     end
                 end
 
-                # Kill existing sender task for this socket if any
-                old_sender = lock(STATE_LOCK) do
-                    get(SENDER_TASKS, session_id, nothing)
-                end
-                if !isnothing(old_sender) && !istaskdone(old_sender)
-                    try
-                        Base.throwto(old_sender, InterruptException())
-                    catch
-                    end
-                end
-
-                # Start the async Sender Task that streams from Channel to WebSocket
-                new_sender = Threads.@spawn begin
-                    try
-                        ch = lock(STATE_LOCK) do
-                            get(SESSION_CHANNELS, session_id, nothing)
-                        end
-                        if !isnothing(ch)
-                            for log_msg in ch
-                                HTTP.WebSockets.isclosed(ws) && break
-                                HTTP.WebSockets.send(ws, log_msg)
-                            end
-                        end
-                    catch
-                    end
-                end
-
-                lock(STATE_LOCK) do
-                    SENDER_TASKS[session_id] = new_sender
-                end
-
             elseif action == "stop"
-                t_abort = lock(STATE_LOCK) do
-                    get(ACTIVE_TASKS, session_id, nothing)
+                cancel_flag = lock(STATE_LOCK) do
+                    get(SESSION_CANCEL_FLAGS, session_id, nothing)
                 end
-                if !isnothing(t_abort) && !istaskdone(t_abort)
-                    @info "User requested abort for session: $session_id"
-                    @async try
-                        Base.throwto(t_abort, InterruptException())
-                    catch
-                    end
+
+                if !isnothing(cancel_flag)
+                    cancel_flag[] = true
+
+                    @info "Cancellation requested for session: $session_id"
+                else
+                    @warn "No active cancellation flag for session: $session_id"
                 end
             end
         end
@@ -355,21 +454,36 @@ end
             @error "WebSocket crash:" exception=(e, catch_backtrace())
         end
     finally
+        local sender_to_stop = nothing
+
         lock(STATE_LOCK) do
-            # Remove the connection from the registry
             delete!(ACTIVE_WS, ws)
 
-            if session_id !== nothing && haskey(SENDER_TASKS, session_id)
-                s_task = SENDER_TASKS[session_id]
-                if !istaskdone(s_task)
-                    @async try
-                        Base.throwto(s_task, InterruptException())
-                    catch
-                    end
-                end
+            # Clean up only the sender owned by this WebSocket.
+            if !isnothing(session_id) &&
+                !isnothing(sender_task) &&
+                get(SENDER_TASKS, session_id, nothing) === sender_task
+
                 delete!(SENDER_TASKS, session_id)
+                sender_to_stop = sender_task
+            end
+
+            # Keep history while the simulation or another sender is still active.
+            if !isnothing(session_id) &&
+                !haskey(ACTIVE_TASKS, session_id) &&
+                !haskey(SENDER_TASKS, session_id)
+
+                delete!(SESSION_HISTORY, session_id)
             end
         end
+
+        if !isnothing(sender_to_stop) && !istaskdone(sender_to_stop)
+            try
+                Base.throwto(sender_to_stop, InterruptException())
+            catch
+            end
+        end
+
         @info "WebSocket disconnected for session: $(session_id !== nothing ? session_id : "unknown")"
     end
 end

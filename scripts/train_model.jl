@@ -28,9 +28,10 @@ function run_train(
     solver::AbstractNeuralSolver,
     data_hash::String
     ;
-    log_cb=(x)->nothing
+    log_cb=(x)->nothing,
+    should_stop=()->false,
 )
-    return execute_train_pipeline(solver, data_hash; log_cb=log_cb)
+    return execute_train_pipeline(solver, data_hash; log_cb=log_cb, should_stop=should_stop)
 end
 
 

@@ -40,6 +40,7 @@ export const useSimulationSocket = (
     const [statusMessage, setStatusMessage] = useState<string>("");
     const [progress, setProgress] = useState<SimulationProgress | null>(null);
     const [lossHistory, setLossHistory] = useState<LossPoint[]>([]);
+    const [isAborting, setIsAborting] = useState(false);
 
     // Helper: retrieve a clean session ID (prevents JS string literal bugs)
     const getActiveSession = () => {
@@ -58,6 +59,7 @@ export const useSimulationSocket = (
             resolveCb?: (value: SimulationResponse) => void,
             rejectCb?: (reason: Error) => void,
         ) => {
+            setIsAborting(false);
             setIsLoading(true);
             setError(null);
 
@@ -97,6 +99,7 @@ export const useSimulationSocket = (
             };
 
             socket.onmessage = (event: MessageEvent) => {
+                if (wsRef.current !== socket) return;
                 const res = JSON.parse(event.data);
 
                 switch (res.type) {
@@ -137,6 +140,7 @@ export const useSimulationSocket = (
                             eval_hash: res.eval_hash,
                             eval_data: res.eval_data,
                         };
+                        setIsAborting(false);
                         setResult(successData);
                         setIsLoading(false);
                         sessionStorage.removeItem(SESSION_KEY); // successfully terminated: session cleanup
@@ -150,6 +154,7 @@ export const useSimulationSocket = (
                         break;
                     }
                     case "error":
+                        setIsAborting(false);
                         setError(res.message);
                         setIsLoading(false);
                         setStatusMessage("");
@@ -168,9 +173,11 @@ export const useSimulationSocket = (
             };
 
             socket.onerror = () => {
+                if (wsRef.current !== socket) return;
                 const errMsg = "WebSocket connection failed or lost.";
                 setError(errMsg);
                 setIsLoading(false);
+                setIsAborting(false);
                 if (promiseRef.current) {
                     promiseRef.current.reject(new Error(errMsg));
                     promiseRef.current = null;
@@ -178,19 +185,35 @@ export const useSimulationSocket = (
             };
 
             socket.onclose = (event) => {
-                // Anomaly connection lost (server crash)
-                // Remove the loading state to unlock the UI
-                if (!event.wasClean) {
-                    setIsLoading(false);
-                    setStatusMessage("");
+                if (wsRef.current !== socket) return;
 
-                    // In case of silent crashes, ensure reject
-                    if (promiseRef.current) {
-                        promiseRef.current.reject(
-                            new Error("Server crashed unexpectedly."),
-                        );
-                        promiseRef.current = null;
-                    }
+                wsRef.current = null;
+
+                // A terminal success/error event has already handled the UI state.
+                // Otherwise, unlock the UI and allow the session-reconnect effect
+                // to reconnect if the session is still stored.
+                setIsLoading(false);
+                setIsAborting(false);
+
+                const savedSession = getActiveSession();
+
+                if (savedSession) {
+                    setStatusMessage(
+                        "Connection closed. Checking simulation session...",
+                    );
+                } else {
+                    setStatusMessage("");
+                }
+
+                if (promiseRef.current) {
+                    promiseRef.current.reject(
+                        new Error(
+                            event.wasClean
+                                ? "WebSocket closed before the simulation returned a result."
+                                : "WebSocket connection lost unexpectedly.",
+                        ),
+                    );
+                    promiseRef.current = null;
                 }
             };
         },
@@ -206,6 +229,25 @@ export const useSimulationSocket = (
         }
     }, [serverStatus, connectSocket, isLoading]);
 
+    useEffect(() => {
+        return () => {
+            const socket = wsRef.current;
+            wsRef.current = null;
+
+            if (
+                socket &&
+                socket.readyState !== WebSocket.CLOSED &&
+                socket.readyState !== WebSocket.CLOSING
+            ) {
+                try {
+                    socket.close(1000, "Orchestrator view unmounted");
+                } catch {
+                    // The socket may already be closing.
+                }
+            }
+        };
+    }, []);
+
     const startSimulation = (
         payload: SimulationPayload,
     ): Promise<SimulationResponse> => {
@@ -215,12 +257,17 @@ export const useSimulationSocket = (
     };
 
     const abortSimulation = () => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        if (
+            wsRef.current &&
+            wsRef.current.readyState === WebSocket.OPEN &&
+            !isAborting
+        ) {
+            setIsAborting(true);
             const stopMessage: WebSocketRequest = { action: "stop" };
             wsRef.current.send(JSON.stringify(stopMessage));
-            setStatusMessage("Aborting... Waiting for Julia threads to yield.");
-            // We don't delete the session here, we wait for the "error" event from the server
-            // with the message "Simulation interrupted by the user"
+            setStatusMessage(
+                "Cancellation requested. If Reactant/Enzyme/XLA is compiling the first training step, stopping may take a few minutes. The pipeline will stop when the compilation returns.",
+            );
         }
     };
 
@@ -242,5 +289,6 @@ export const useSimulationSocket = (
         startSimulation,
         abortSimulation,
         clearResult,
+        isAborting,
     };
 };

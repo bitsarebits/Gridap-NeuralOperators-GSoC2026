@@ -38,7 +38,8 @@ function run_pipeline(
     fem_config::FEMConfig,
     eval_config::EvalConfig
     ;
-    log_cb=(x)->nothing
+    log_cb=(x)->nothing,
+    should_stop=()->false,
 )
     solver_name = get_solver_name(solver)
     println("=====================================================")
@@ -48,14 +49,17 @@ function run_pipeline(
     log_cb(Dict("type" => "status", "stage" => "Starting pipeline execution..."))
 
     # Data
+    should_stop() && throw(InterruptException())
     log_cb(Dict("type" => "status", "stage" => "Phase 1/3: High-Fidelity Data Generation..."))
     data_hash = run_generate_data(fem_config)
 
     # Model
+    should_stop() && throw(InterruptException())
     log_cb(Dict("type" => "status", "stage" => "Phase 2/3: Neural Operator Training..."))
-    model_hash = run_train(solver, data_hash; log_cb)
+    model_hash = run_train(solver, data_hash; log_cb, should_stop)
 
     # Evaluation and plotting
+    should_stop() && throw(InterruptException())
     log_cb(Dict("type" => "status", "stage" => "Phase 3/3: Model Evaluation and Plotting..."))
     eval_hash = run_plot(solver, model_hash, eval_config; log_cb)
 
