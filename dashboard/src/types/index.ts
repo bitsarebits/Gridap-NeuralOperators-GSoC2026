@@ -90,8 +90,7 @@ export interface EvaluationMetrics {
 }
 
 export interface InteractiveEvalData {
-    // Absent on legacy evaluations produced before the benchmark protocol was versioned.
-    benchmark_version?: number;
+    benchmark_version: number;
     eval_hash: string;
     model_hash: string;
     data_hash: string;
@@ -102,7 +101,7 @@ export interface InteractiveEvalData {
     u_pred: number[][]; // Indexed as u_pred[tIdx][xIdx]
     rel_l2_t: number[];
     linf_t: number[];
-    loss_history?: LossPoint[];
+    loss_history: LossPoint[];
     metrics: EvaluationMetrics;
 }
 
@@ -118,12 +117,10 @@ export interface ArenaCandidate {
 
 // Julia Response
 export interface SimulationResponse {
-    message?: string;
-    data_hash?: string;
-    model_hash?: string;
-    eval_hash?: string;
-    image_url?: string;
-    eval_data?: InteractiveEvalData;
+    data_hash: string;
+    model_hash: string;
+    eval_hash: string;
+    eval_data: InteractiveEvalData;
 }
 
 export interface CacheCheckResponse {
@@ -148,7 +145,6 @@ export interface RegistryResponse {
 
 export interface PlotResponse {
     status: "success" | "error";
-    image_url?: string;
     eval_data?: InteractiveEvalData;
     message?: string;
 }
@@ -172,13 +168,12 @@ export interface SyncPayload {
     hashes: {
         data_hash: string;
         model_hash?: string;
-        eval_hash?: string;
     };
     fem_config: any;
     solver_config?: any;
     eval_config?: any;
+    benchmark_version?: number;
     data_url?: string;
     model_url?: string;
-    image_url?: string;
     eval_url?: string;
 }

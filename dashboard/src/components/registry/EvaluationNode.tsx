@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { fetchCloudEvaluationJson, fetchEvaluationPlot } from "../../api";
 import ShareButton from "../ui/ShareButton";
-import DownloadButton from "../ui/DownloadButton";
 import SyncWorkspaceButton from "../ui/SyncWorkspaceButton";
 import InteractiveEvaluationView from "../InteractiveEvaluationView";
 import type {
@@ -45,9 +44,6 @@ export default function EvaluationNode({
     // State
     const [isExpanded, setIsExpanded] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    const [plotImage, setPlotImage] = useState<string | null>(
-        evalObj.image_url || null,
-    ); // Initialized if it came from firebase
     const [evalData, setEvalData] = useState<InteractiveEvalData | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -61,30 +57,23 @@ export default function EvaluationNode({
     const dataHash = modelConfig?.data_hash;
     const femConfig = dataHash ? registry.data[dataHash] : null;
 
-    // Backward Compatibility Parsers for legacy registry schemas
-    const parsedSolverConfig = modelConfig?.solver || modelConfig;
-    const parsedEvalConfig = evalObj?.eval_config || evalObj;
-    const parsedModelType =
-        modelConfig?.solver_type || modelConfig?.model_type || solverType;
-
-    // Sync payload only if we have all the data in Firebase
+    // Local and shared entries follow the same canonical registry schema.
     const syncPayload =
         femConfig && modelConfig
             ? {
                   eval_hash: evalHash,
-                  model_type: parsedModelType,
+                  model_type: modelConfig.solver_type,
                   hashes: {
                       data_hash: dataHash,
                       model_hash: modelHash,
-                      eval_hash: evalHash,
                   },
                   fem_config: femConfig,
-                  solver_config: parsedSolverConfig,
-                  eval_config: parsedEvalConfig,
+                  solver_config: modelConfig.solver,
+                  eval_config: evalObj.eval_config,
+                  benchmark_version: evalObj.benchmark_version,
                   data_url: femConfig.data_url || "",
                   model_url: modelConfig.model_url || "",
-                  image_url: evalObj.image_url || "",
-                  eval_url: evalObj.eval_url || "",
+                  eval_url: evalObj.eval_url,
               }
             : null;
 
@@ -92,43 +81,41 @@ export default function EvaluationNode({
         const willExpand = !isExpanded;
         setIsExpanded(willExpand);
 
-        if (willExpand && !evalData && !plotImage) {
+        if (willExpand && !evalData) {
             setIsLoading(true);
             setError(null);
             try {
-                if (isLocal && serverIsConnected) {
-                    const res = await fetchEvaluationPlot(evalHash, solverType);
-                    if (res.status === "success") {
-                        if (res.eval_data) setEvalData(res.eval_data);
-                        else if (res.image_url) setPlotImage(res.image_url);
-                    } else {
-                        setError(
-                            res.message ||
-                                "Evaluation not found on local disk.",
-                        );
+                if (isLocal) {
+                    if (!serverIsConnected) {
+                        throw new Error("Connect to the Julia server to load this evaluation.");
                     }
-                } else if (evalObj.eval_url) {
-                    const cloudData = await fetchCloudEvaluationJson(
-                        evalObj.eval_url,
-                    );
+                    const res = await fetchEvaluationPlot(evalHash, solverType);
+                    if (res.status !== "success" || !res.eval_data) {
+                        throw new Error(res.message || "Interactive evaluation JSON not found.");
+                    }
+                    setEvalData(res.eval_data);
+                } else {
+                    if (!evalObj.eval_url) {
+                        throw new Error("Evaluation JSON URL is missing from the shared registry.");
+                    }
+                    const cloudData = await fetchCloudEvaluationJson(evalObj.eval_url);
                     setEvalData(cloudData);
                 }
             } catch (err) {
                 console.error("Failed to load evaluation:", err);
-                setError("Failed to fetch evaluation data.");
+                setError(err instanceof Error ? err.message : "Failed to fetch evaluation JSON.");
             } finally {
                 setIsLoading(false);
             }
         }
     };
 
-    const evalConfig = evalObj.eval_config || evalObj;
-    const sigmaTest = evalConfig.sigma_test || "N/A";
+    const sigmaTest = evalObj.eval_config.sigma_test;
 
     const numericSigma = Number(sigmaTest);
-    const hasInteractiveArtifact = isLocal
-        ? (evalObj.benchmark_version ?? 2) === 2
-        : Boolean(evalObj.eval_url);
+    const hasInteractiveArtifact =
+        evalObj.benchmark_version === 2 &&
+        (isLocal || Boolean(evalObj.eval_url));
 
     const isArenaCompatible =
         hasInteractiveArtifact &&
@@ -160,7 +147,7 @@ export default function EvaluationNode({
                                     evalHash,
                                     modelHash,
                                     dataHash: dataHash || "",
-                                    solverType: parsedModelType,
+                                    solverType: modelConfig.solver_type,
                                     sigmaTest,
                                     evalUrl: evalObj.eval_url,
                                     isLocal,
@@ -257,58 +244,6 @@ export default function EvaluationNode({
                                             syncPayload={syncPayload}
                                         />
                                     )}
-                            </div>
-                        </>
-                    ) : plotImage ? (
-                        <>
-                            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white p-2 w-full max-w-3xl">
-                                <img
-                                    src={plotImage}
-                                    alt={`Plot report ${evalHash}`}
-                                    className="w-full h-auto rounded-lg"
-                                />
-                            </div>
-                            {/* action buttons */}
-                            <div className="w-full max-w-3xl flex justify-end items-center gap-2 mt-3">
-                                {isShared && serverIsConnected && (
-                                    <DeleteButton
-                                        targetHash={evalHash}
-                                        targetType="evaluation"
-                                        mode="cloud"
-                                        buttonLabel="Remove from Cloud"
-                                        parentModelHash={modelHash}
-                                        parentDataHash={dataHash}
-                                    />
-                                )}
-
-                                {/* Delete Local */}
-                                {isLocal && (
-                                    <DeleteButton
-                                        targetHash={evalHash}
-                                        targetType="evaluation"
-                                        mode="local"
-                                        buttonLabel="Delete Local File"
-                                    />
-                                )}
-                                {!isShared && (
-                                    <ShareButton evalHash={evalHash} />
-                                )}
-
-                                {isShared &&
-                                    !isLocal &&
-                                    serverIsConnected &&
-                                    syncPayload && (
-                                        <SyncWorkspaceButton
-                                            isLocal={isLocal}
-                                            syncPayload={syncPayload}
-                                        />
-                                    )}
-
-                                <DownloadButton
-                                    imageUrl={plotImage}
-                                    fileName={`archived_eval_${evalHash}.png`}
-                                    text="Download Chart"
-                                />
                             </div>
                         </>
                     ) : (

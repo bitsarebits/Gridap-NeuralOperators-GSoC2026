@@ -12,7 +12,6 @@ export const FORBIDDEN_KEYS = [
     "_isLocal",
     "data_url",
     "model_url",
-    "image_url",
     "data_hash",
     "model_hash",
     "eval_hash",
@@ -182,6 +181,24 @@ const LOGICAL_ORDER = [
     "factor",
 ];
 
+const getNumericSequence = (value: unknown): unknown[] | null => {
+    if (Array.isArray(value)) {
+        return value;
+    }
+
+    if (value !== null && typeof value === "object") {
+        const entries = Object.entries(value as Record<string, unknown>);
+
+        if (entries.length > 0 && entries.every(([key]) => /^\d+$/.test(key))) {
+            return entries
+                .sort(([a], [b]) => Number(a) - Number(b))
+                .map(([, item]) => item);
+        }
+    }
+
+    return null;
+};
+
 export default function ConfigGrid({ title, configObj }: ConfigGridProps) {
     if (!configObj) return null;
 
@@ -193,22 +210,24 @@ export default function ConfigGrid({ title, configObj }: ConfigGridProps) {
 
     const flattenObject = (obj: any, prefix = ""): Record<string, string> => {
         return Object.keys(obj).reduce((acc: Record<string, string>, k) => {
-            const pre = prefix.length ? prefix + "_" : "";
-            if (
-                typeof obj[k] === "object" &&
-                obj[k] !== null &&
-                !Array.isArray(obj[k])
-            ) {
-                Object.assign(acc, flattenObject(obj[k], pre + k));
-            } else if (Array.isArray(obj[k])) {
-                acc[pre + k] = `[${obj[k].join(", ")}]`;
+            const pre = prefix.length ? `${prefix}_` : "";
+            const value = obj[k];
+            const sequence = getNumericSequence(value);
+
+            // Keep arrays and numeric-keyed objects as one field.
+            if (sequence !== null) {
+                acc[pre + k] = `[${sequence.map(String).join(", ")}]`;
+            } else if (typeof value === "object" && value !== null) {
+                Object.assign(acc, flattenObject(value, pre + k));
             } else {
-                const val =
-                    typeof obj[k] === "number" && !Number.isInteger(obj[k])
-                        ? Number(obj[k].toPrecision(6))
-                        : obj[k];
-                acc[pre + k] = String(val);
+                const formattedValue =
+                    typeof value === "number" && !Number.isInteger(value)
+                        ? Number(value.toPrecision(6))
+                        : value;
+
+                acc[pre + k] = String(formattedValue);
             }
+
             return acc;
         }, {});
     };

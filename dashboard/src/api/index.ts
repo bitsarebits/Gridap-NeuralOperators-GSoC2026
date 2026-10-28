@@ -148,18 +148,18 @@ export const fetchSharedRegistry = async (): Promise<RegistryData> => {
             };
 
             sharedRegistry.models[modelHash] = {
-                ...parsedDoc.solver_config,
                 solver_type: parsedDoc.model_type,
+                solver: parsedDoc.solver_config,
                 data_hash: dataHash,
                 model_url: parsedDoc.model_url,
                 _isShared: true,
             };
 
             sharedRegistry.evaluations[evalHash] = {
-                ...parsedDoc.eval_config,
                 model_hash: modelHash,
-                image_url: parsedDoc.image_url || "",
-                eval_url: parsedDoc.eval_url || "",
+                eval_config: parsedDoc.eval_config,
+                benchmark_version: parsedDoc.benchmark_version,
+                eval_url: parsedDoc.eval_url,
                 _isShared: true,
             };
         });

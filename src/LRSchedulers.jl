@@ -3,7 +3,7 @@ module LRSchedulers
 using Optimisers
 
 export AbstractLRScheduler, ReduceLROnPlateau, CosineAnnealing
-export step_scheduler!, get_scheduler_info, init_scheduler
+export step_scheduler!, init_scheduler
 
 # Super-type
 abstract type AbstractLRScheduler end
@@ -60,15 +60,6 @@ function step_scheduler!(scheduler::CosineAnnealing, opt_state, epoch, loss)
 end
 
 """
-    get_scheduler_info(s::CosineAnnealing)
-
-Returns a deterministic string representation of the scheduler's hyperparameters.
-This guarantees collision-free SHA-256 hashes.
-"""
-get_scheduler_info(s::CosineAnnealing) = "CosineAnnealing_max=$(s.lr_max)_min=$(s.lr_min)_ep=$(s.max_epochs)"
-
-
-"""
     ReduceLROnPlateau
 
 Dynamic learning rate scheduler. Reduces the learning rate by a `factor`
@@ -119,9 +110,6 @@ function step_scheduler!(scheduler::ReduceLROnPlateau, opt_state, current_epoch,
         scheduler.wait = 0
     end
 end
-
-get_scheduler_info(s::ReduceLROnPlateau) = "ReduceLROnPlateau_pat=$(s.patience)_fac=$(s.factor)_min=$(s.min_lr)"
-
 
 # INITIALIZATION
 # Pure type (ex. `CosineAnnealing`). Instantiate

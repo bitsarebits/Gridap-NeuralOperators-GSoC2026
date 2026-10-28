@@ -82,22 +82,22 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
                     ) {
                         setLoadedEvals([]);
                         setError(
-                            "Every selected evaluation must contain interactive JSON data. Re-run legacy PNG evaluations with the current benchmark protocol before comparing them.",
+                            "Every selected evaluation must contain interactive JSON data. Re-run any missing or incomplete evaluation before comparing models.",
                         );
                     } else if (
                         results.some((ev) => ev.benchmark_version !== 2)
                     ) {
                         setLoadedEvals([]);
                         setError(
-                            "These results were generated with an older benchmark protocol. Re-run the selected evaluations before comparing them.",
+                            "Arena comparison requires benchmark protocol v2. Re-run the selected evaluations with the current protocol before comparing them.",
                         );
                     } else {
                         const reference = results[0];
                         const referenceSigma = Number(
-                            reference.metrics?.sigma_test,
+                            reference.metrics.sigma_test,
                         );
                         const incompatible = results.some((ev) => {
-                            const sigma = Number(ev.metrics?.sigma_test);
+                            const sigma = Number(ev.metrics.sigma_test);
                             return (
                                 !reference.data_hash ||
                                 !ev.data_hash ||

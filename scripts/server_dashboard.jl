@@ -18,7 +18,6 @@ using HTTP
 using JSON3
 using Sockets
 using UUIDs
-using Base64
 using Dates
 
 using experiments_NeuralOperators
@@ -121,24 +120,13 @@ function build_configs(payload)
     solver_data = payload["solver"]
     local solver::AbstractNeuralSolver
 
-    # Safe extractors for retro-compatibility
-    safe_batch_size(default_val::Int) =
-        haskey(solver_data, "batch_size") &&
-            !isnothing(solver_data["batch_size"]) ?
-        Int(solver_data["batch_size"]) :
-        default_val
-
-    function safe_hash(data::AbstractDict)
-        h = get(data, "pretrained_model_hash", "")
-        return isnothing(h) ? "" : String(h)
-    end
-
-    pm_hash = safe_hash(solver_data)
+    batch_size = Int(solver_data["batch_size"])
+    pm_hash = String(solver_data["pretrained_model_hash"])
 
     if solver_data["type"] == "DeepONet"
         solver = DeepONetSolver(
             epochs=Int(solver_data["epochs"]),
-            batch_size=safe_batch_size(0),
+            batch_size=batch_size,
             step_x=Int(solver_data["step_x"]),
             step_t=Int(solver_data["step_t"]),
             m_sensors=Int(solver_data["m_sensors"]),
@@ -153,7 +141,7 @@ function build_configs(payload)
 
         solver = FNOSolver(
             epochs=Int(solver_data["epochs"]),
-            batch_size=safe_batch_size(32),
+            batch_size=batch_size,
             nx_red=Int(solver_data["nx_red"]),
             nt_red=Int(solver_data["nt_red"]),
             hidden_channels=parsed_hidden,
@@ -164,7 +152,7 @@ function build_configs(payload)
     elseif solver_data["type"] == "NOMAD"
         solver = NOMADSolver(
             epochs=Int(solver_data["epochs"]),
-            batch_size=safe_batch_size(2048),
+            batch_size=batch_size,
             step_x=Int(solver_data["step_x"]),
             step_t=Int(solver_data["step_t"]),
             m_sensors=Int(solver_data["m_sensors"]),
@@ -269,30 +257,15 @@ end
 
                                 solver_name = get_solver_name(solver)
                                 json_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).json")
-                                image_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).png")
-
-                                if isfile(json_path)
-                                    eval_data = JSON3.read(read(json_path, String), Dict{String,Any})
-                                    log_cb(Dict(
-                                        "type" => "success",
-                                        "data_hash" => data_hash,
-                                        "model_hash" => model_hash,
-                                        "eval_hash" => eval_hash,
-                                        "eval_data" => eval_data
-                                    ))
-                                elseif isfile(image_path)
-                                    image_b64 = base64encode(read(image_path))
-                                    image_url = "data:image/png;base64," * image_b64
-                                    log_cb(Dict(
-                                        "type" => "success",
-                                        "data_hash" => data_hash,
-                                        "model_hash" => model_hash,
-                                        "eval_hash" => eval_hash,
-                                        "image_url" => image_url
-                                    ))
-                                else
-                                    error("Evaluation output not found on disk after generation")
-                                end
+                                isfile(json_path) || error("Evaluation JSON not found after generation: $json_path")
+                                eval_data = JSON3.read(read(json_path, String), Dict{String,Any})
+                                log_cb(Dict(
+                                    "type" => "success",
+                                    "data_hash" => data_hash,
+                                    "model_hash" => model_hash,
+                                    "eval_hash" => eval_hash,
+                                    "eval_data" => eval_data
+                                ))
                             catch e
                                 if e isa InterruptException || (e isa TaskFailedException && occursin("InterruptException", string(e)))
                                     # Notify the frontend that the thread stopped
@@ -408,36 +381,37 @@ end
 
         # Build configs
         fem_config, solver, eval_config = build_configs(payload)
-
         solver_name = get_solver_name(solver)
 
-        # Check Data Hash
+        # Check FEM Data Hash
         data_hash = HashRegistry.config_hash(fem_config)
-        data_exists = HashRegistry.check_registry("data", data_hash)
+        data_path = datadir("sims", "data_$(data_hash).jld2")
+        data_exists = HashRegistry.check_registry("data", data_hash) && isfile(data_path)
 
         # Check Model Hash
-        model_dict = Dict(
-            "solver_type" => solver_name,
-            "solver" => HashRegistry.struct_to_dict(solver),
-            "data_hash" => data_hash
-        )
+        model_dict = Pipelines.model_config_for_hash(solver, data_hash)
         model_hash = HashRegistry.config_hash(model_dict)
-        model_exists = HashRegistry.check_registry("models", model_hash)
+        model_path = datadir(
+            "models",
+            lowercase(solver_name),
+            "model_$(model_hash).jld2",
+        )
+        model_exists = HashRegistry.check_registry("models", model_hash) && isfile(model_path)
 
         # Check Eval Hash
-        eval_dict = Dict(
-            "model_hash" => model_hash,
-            "eval_config" => HashRegistry.struct_to_dict(eval_config),
-            "benchmark_version" => Pipelines.EVALUATION_BENCHMARK_VERSION,
-        )
+        eval_dict = Pipelines.evaluation_config_for_hash(model_hash, eval_config)
         eval_hash = HashRegistry.config_hash(eval_dict)
-        eval_exists = HashRegistry.check_registry("evaluations", eval_hash)
+        eval_path = plotsdir(
+            lowercase(solver_name),
+            "eval_$(eval_hash).json",
+        )
+        eval_exists = HashRegistry.check_registry("evaluations", eval_hash) && isfile(eval_path)
 
         return JSON3.write(Dict(
             "status" => "success",
             "data_exists" => data_exists,
             "model_exists" => model_exists,
-            "eval_exists" => eval_exists
+            "eval_exists" => eval_exists,
         ))
 
     catch e
@@ -467,29 +441,24 @@ end
     end
 end
 
-# Endpoint to Fetch a specific evaluation (JSON interactive data or legacy Base64 PNG)
+# Endpoint to fetch a specific interactive evaluation JSON artifact.
 @post "/api/get_evaluation_plot" function (req::HTTP.Request)
     try
         payload = JSON3.read(req.body)
         eval_hash = String(payload["eval_hash"])
         solver_type = lowercase(String(payload["solver_type"]))
 
-        @info "Serving evaluation data for $solver_type (Hash: $eval_hash)"
+        @info "Serving evaluation JSON for $solver_type (Hash: $eval_hash)"
         json_path = plotsdir(solver_type, "eval_$(eval_hash).json")
-        image_path = plotsdir(solver_type, "eval_$(eval_hash).png")
 
         if isfile(json_path)
             eval_data = JSON3.read(read(json_path, String), Dict{String,Any})
             return JSON3.write(Dict("status" => "success", "eval_data" => eval_data))
-        elseif isfile(image_path)
-            image_b64 = base64encode(read(image_path))
-            image_url = "data:image/png;base64," * image_b64
-            return JSON3.write(Dict("status" => "success", "image_url" => image_url))
         else
             return HTTP.Response(
                 404,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict("status" => "error", "message" => "Evaluation file not found on disk."))
+                JSON3.write(Dict("status" => "error", "message" => "Evaluation JSON not found on disk."))
             )
         end
     catch e
@@ -557,12 +526,8 @@ end
     solver_type_raw = model_data["solver_type"]
     solver_type = lowercase(solver_type_raw)
 
-    # Verify the image exists locally
-    image_path = plotsdir(solver_type, "eval_$(eval_hash).png")
-    json_path = plotsdir(solver_type, "eval_$(eval_hash).json")
-    has_json = isfile(json_path)
-    eval_file_path = has_json ? json_path : image_path
-
+    # Only interactive JSON evaluations can be shared.
+    eval_file_path = plotsdir(solver_type, "eval_$(eval_hash).json")
     data_path = datadir("sims", "data_$(data_hash).jld2")
     model_path = datadir("models", solver_type, "model_$(model_hash).jld2")
 
@@ -586,14 +551,11 @@ end
         )
     end
 
-    ext = has_json ? "json" : "png"
-    mime_type = has_json ? "application/json" : "image/png"
-
     if FirebaseREST.check_document_exists(token, "shared_experiments", eval_hash)
         cred = Auth.get_firebase_credentials()
         project_id = cred["project_id"]
         bucket_name = "$(project_id).firebasestorage.app"
-        reconstructed_url = "https://firebasestorage.googleapis.com/v0/b/$(bucket_name)/o/plots%2F$(eval_hash).$(ext)?alt=media"
+        reconstructed_url = "https://firebasestorage.googleapis.com/v0/b/$(bucket_name)/o/plots%2F$(eval_hash).json?alt=media"
 
         return JSON3.write(Dict(
             "status" => "success",
@@ -603,8 +565,8 @@ end
         ))
     end
 
-    @info "Uploading evaluation artifact ($ext)..."
-    artifact_url = FirebaseREST.upload_to_storage(token, eval_file_path, "plots/$(eval_hash).$(ext)"; content_type=mime_type)
+    @info "Uploading evaluation JSON artifact..."
+    artifact_url = FirebaseREST.upload_to_storage(token, eval_file_path, "plots/$(eval_hash).json"; content_type="application/json")
 
     @info "Uploading high-fidelity FEM data..."
     data_url = FirebaseREST.upload_to_storage(token, data_path, "data/$(data_hash).jld2")
@@ -633,8 +595,8 @@ end
         "fem_config" => data_config,
         "solver_config" => model_data["solver"],
         "eval_config" => eval_data["eval_config"],
-        "image_url" => has_json ? "" : artifact_url,
-        "eval_url" => has_json ? artifact_url : "",
+        "benchmark_version" => eval_data["benchmark_version"],
+        "eval_url" => artifact_url,
         "data_url" => data_url,
         "model_url" => model_url
     )
@@ -674,8 +636,7 @@ end
     data_hash = get(hashes, "data_hash", nothing)
     model_hash = get(hashes, "model_hash", nothing)
 
-    # Check both root and hashes dictionary for eval_hash for maximum compatibility
-    eval_hash = get(payload, "eval_hash", get(hashes, "eval_hash", nothing))
+    eval_hash = get(payload, "eval_hash", nothing)
 
     if isnothing(data_hash) && isnothing(model_hash) && isnothing(eval_hash)
         return HTTP.Response(400, ["Content-Type" => "application/json"],
@@ -686,7 +647,7 @@ end
 
     # Internal helper to clean up database and frontend metadata
     function clean_config(d::Dict)
-        forbidden_keys = ["_isShared", "_isLocal", "model_url", "data_url", "image_url", "eval_url", "data_hash", "model_hash", "eval_hash", "solver_type", "model_type", "download_url"]
+        forbidden_keys = ["_isShared", "_isLocal", "model_url", "data_url", "eval_url", "data_hash", "model_hash", "eval_hash", "solver_type", "model_type", "download_url"]
         return Dict{String,Any}(string(k) => v for (k, v) in pairs(d) if !(string(k) in forbidden_keys))
     end
 
@@ -746,16 +707,6 @@ end
 
                 cleaned_solver = clean_config(payload["solver_config"])
 
-                # Schema evolution padding for old models downloaded from Firebase
-                if !haskey(cleaned_solver, "batch_size")
-                    default_bs = solver_type == "nomad" ? 2048 : (solver_type == "fno" ? 32 : 0)
-                    cleaned_solver["batch_size"] = default_bs
-                end
-
-                if !haskey(cleaned_solver, "pretrained_model_hash")
-                    cleaned_solver["pretrained_model_hash"] = ""
-                end
-
                 registry["models"][model_hash] = Dict(
                     "solver_type" => model_type_raw,
                     "solver" => cleaned_solver,
@@ -765,38 +716,32 @@ end
         end
     end
 
-    # SYNC ZERO-SHOT EVALUATION (JSON OR LEGACY PNG)
+    # Sync the interactive zero-shot evaluation JSON.
     if sync_success && !isnothing(eval_hash) && haskey(payload, "eval_config")
-        if isempty(solver_type)
-            @warn "Model type missing. Cannot sync artifact."
+        isempty(solver_type) && error("Model type missing. Cannot sync evaluation JSON.")
+        eval_url = String(payload["eval_url"])
+        isempty(eval_url) && error("Evaluation JSON URL missing from sync payload.")
+
+        json_path = plotsdir(solver_type, "eval_$(eval_hash).json")
+        if !isfile(json_path)
+            mkpath(dirname(json_path))
+            @info "Downloading evaluation JSON [$(eval_hash)]..."
+            try
+                HTTP.download(eval_url, json_path)
+            catch e
+                @error "Failed to download evaluation JSON" exception=(e, catch_backtrace())
+                sync_success = false
+            end
         else
-            eval_url = get(payload, "eval_url", "")
-            image_url = get(payload, "image_url", "")
-            is_json_eval = !isempty(eval_url) || occursin(".json", image_url)
-            target_url = !isempty(eval_url) ? eval_url : image_url
-            ext = is_json_eval ? "json" : "png"
+            @info "Evaluation JSON [$(eval_hash)] already exists. Skipping download."
+        end
 
-            plot_dest = plotsdir(solver_type, "eval_$(eval_hash).$(ext)")
-
-            if !isfile(plot_dest) && !isempty(target_url)
-                mkpath(dirname(plot_dest))
-                @info "Downloading Evaluation artifact [$(eval_hash)]..."
-                try
-                    HTTP.download(target_url, plot_dest)
-                catch e
-                    @error "Failed to download Evaluation artifact" exception=(e, catch_backtrace())
-                    sync_success = false
-                end
-            else
-                @info "Evaluation artifact [$(eval_hash)] already exists or URL missing. Skipping download."
-            end
-
-            if sync_success && !haskey(registry["evaluations"], eval_hash)
-                registry["evaluations"][eval_hash] = Dict(
-                    "model_hash" => isnothing(model_hash) ? "" : model_hash,
-                    "eval_config" => clean_config(payload["eval_config"])
-                )
-            end
+        if sync_success && !haskey(registry["evaluations"], eval_hash)
+            registry["evaluations"][eval_hash] = Dict(
+                "model_hash" => model_hash,
+                "eval_config" => clean_config(payload["eval_config"]),
+                "benchmark_version" => payload["benchmark_version"],
+            )
         end
     end
 
@@ -864,17 +809,15 @@ end
     # Delete Evaluations
     for e_h in evals_to_delete
         m_h = registry["evaluations"][e_h]["model_hash"]
-        solver_type = lowercase(get(registry["models"][m_h], "solver_type", get(registry["models"][m_h], "model_type", "unknown")))
+        solver_type = lowercase(registry["models"][m_h]["solver_type"])
         json_path = plotsdir(solver_type, "eval_$(e_h).json")
-        png_path = plotsdir(solver_type, "eval_$(e_h).png")
         isfile(json_path) && rm(json_path)
-        isfile(png_path) && rm(png_path)
         delete!(registry["evaluations"], e_h)
     end
 
     # Delete Models (Weights)
     for m_h in models_to_delete
-        solver_type = lowercase(get(registry["models"][m_h], "solver_type", get(registry["models"][m_h], "model_type", "unknown")))
+        solver_type = lowercase(registry["models"][m_h]["solver_type"])
         model_path = datadir("models", solver_type, "model_$(m_h).jld2")
         isfile(model_path) && rm(model_path)
         delete!(registry["models"], m_h)
@@ -919,7 +862,6 @@ end
     # Delete the specific Firestore document and its Plot
     doc_deleted = FirebaseREST.delete_from_firestore(token, "shared_experiments", eval_hash)
     FirebaseREST.delete_from_storage(token, "plots/$(eval_hash).json")
-    FirebaseREST.delete_from_storage(token, "plots/$(eval_hash).png")
 
     if doc_deleted
         #  Garbage Collection (Reference Checking)

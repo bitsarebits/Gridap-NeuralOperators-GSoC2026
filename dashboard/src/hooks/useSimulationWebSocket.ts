@@ -135,7 +135,6 @@ export const useSimulationSocket = (
                             data_hash: res.data_hash,
                             model_hash: res.model_hash,
                             eval_hash: res.eval_hash,
-                            image_url: res.image_url,
                             eval_data: res.eval_data,
                         };
                         setResult(successData);

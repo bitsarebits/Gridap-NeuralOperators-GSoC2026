@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { SimulationResponse } from "../types";
 import DeleteButton from "./ui/DeleteButton";
-import DownloadButton from "./ui/DownloadButton";
 import ShareButton from "./ui/ShareButton";
 import InteractiveEvaluationView from "./InteractiveEvaluationView";
 import { Trash2, ChevronDown } from "lucide-react";
@@ -14,10 +13,9 @@ interface ResultsProps {
 export default function Results({ result, onReset }: ResultsProps) {
     const [showDiscardMenu, setShowDiscardMenu] = useState(false);
 
-    const plotHash = result.eval_hash || "";
-    const modelHash = result.model_hash || "";
-    const dataHash = result.data_hash || "";
-    const imageUrl = result.image_url || "";
+    const plotHash = result.eval_hash;
+    const modelHash = result.model_hash;
+    const dataHash = result.data_hash;
     const evalData = result.eval_data;
 
     return (
@@ -37,17 +35,7 @@ export default function Results({ result, onReset }: ResultsProps) {
                 evolution, and benchmark metrics.
             </p>
 
-            {evalData ? (
-                <InteractiveEvaluationView evalData={evalData} />
-            ) : imageUrl ? (
-                <div className="border rounded-xl overflow-hidden bg-slate-50 flex justify-center p-4">
-                    <img
-                        src={imageUrl}
-                        alt={`Plot for hash ${plotHash}`}
-                        className="max-w-full h-auto rounded-lg shadow-sm"
-                    />
-                </div>
-            ) : null}
+            <InteractiveEvaluationView evalData={evalData} />
 
             <div className="mt-6 pt-4 border-t border-slate-100 flex justify-between items-center text-sm text-slate-500">
                 <p>
@@ -115,12 +103,6 @@ export default function Results({ result, onReset }: ResultsProps) {
 
                     <ShareButton evalHash={plotHash} />
 
-                    {imageUrl && !evalData && (
-                        <DownloadButton
-                            imageUrl={imageUrl}
-                            fileName={`evaluation_${plotHash}.png`}
-                        />
-                    )}
                 </div>
             </div>
         </div>

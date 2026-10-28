@@ -373,7 +373,7 @@ export default function InteractiveEvaluationView({
         URL.revokeObjectURL(url);
     };
 
-    const hasLossHistory = loss_history && loss_history.length > 0;
+    const hasLossHistory = loss_history.length > 0;
 
     return (
         <div className="w-full flex flex-col gap-4">
@@ -579,8 +579,8 @@ export default function InteractiveEvaluationView({
                         <PlotlyChart
                             data={[
                                 {
-                                    x: loss_history!.map((p) => p.epoch),
-                                    y: loss_history!.map((p) => p.loss),
+                                    x: loss_history.map((p) => p.epoch),
+                                    y: loss_history.map((p) => p.loss),
                                     type: "scatter",
                                     mode: "lines",
                                     name: "MSE Training Loss",

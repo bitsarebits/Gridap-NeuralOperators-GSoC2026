@@ -406,10 +406,9 @@ export default function OrchestratorView({
             </div>
 
             {/* Results */}
-            {result &&
-                result.eval_hash &&
-                (result.eval_data || result.image_url) &&
-                !isLoading && <Results result={result} onReset={clearResult} />}
+            {result && !isLoading && (
+                <Results result={result} onReset={clearResult} />
+            )}
         </div>
     );
 }

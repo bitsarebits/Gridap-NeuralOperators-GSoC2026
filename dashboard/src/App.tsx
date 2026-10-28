@@ -26,57 +26,33 @@ const mapRegistryToFormValues = (
           ? "NOMAD"
           : "DeepONet";
 
-    // Handle stringified tuple reconstruction for FNO
-    const modesString = Array.isArray(solverObj.modes)
-        ? solverObj.modes.join(", ")
-        : typeof solverObj.modes === "object"
-          ? Object.values(solverObj.modes).join(", ")
-          : String(solverObj.modes || defaultValues.modes);
+    // Julia serializes FNO tuples as JSON arrays. Other architectures use form defaults
+    // for architecture-specific fields that do not apply to them.
+    const modesString = solverObj.modes?.join(", ") ?? defaultValues.modes;
+    const hiddenChannelsString =
+        solverObj.hidden_channels?.join(", ") ?? defaultValues.hidden_channels;
 
-    const hiddenChannelsString = Array.isArray(solverObj.hidden_channels)
-        ? solverObj.hidden_channels.join(", ")
-        : typeof solverObj.hidden_channels === "object"
-          ? Object.values(solverObj.hidden_channels).join(", ")
-          : String(solverObj.hidden_channels || defaultValues.hidden_channels);
-
-    // Extract LR Scheduler. New registry entries store `type` explicitly; infer it
-    // from the serialized fields for older entries that predate that metadata.
-    const scheduler = solverObj.lr_scheduler || {};
-    const legacySchedulerInfo = String(solverObj.scheduler_info || "");
-    const schedulerType =
-        scheduler.type === "Cosine"
-            ? "CosineAnnealing"
-            : scheduler.type === "Plateau"
-              ? "ReduceLROnPlateau"
-              : scheduler.type ||
-                (scheduler.lr_max !== undefined || scheduler.max_epochs !== undefined
-                    ? "CosineAnnealing"
-                    : scheduler.patience !== undefined ||
-                        scheduler.current_lr !== undefined ||
-                        legacySchedulerInfo.includes("ReduceLROnPlateau")
-                      ? "ReduceLROnPlateau"
-                      : legacySchedulerInfo.includes("CosineAnnealing")
-                        ? "CosineAnnealing"
-                        : defaultValues.lr_scheduler_type);
+    const scheduler = solverObj.lr_scheduler;
+    const schedulerType = scheduler.type as SimulationFormValues["lr_scheduler_type"];
 
     return {
         // FEM
-        beta_start: femObj.beta_start ?? defaultValues.beta_start,
-        beta_end: femObj.beta_end ?? defaultValues.beta_end,
-        beta_step: femObj.beta_step ?? defaultValues.beta_step,
-        order: femObj.order ?? defaultValues.order,
-        L: femObj.L ?? defaultValues.L,
-        nx: femObj.nx ?? defaultValues.nx,
-        t0: femObj.t0 ?? defaultValues.t0,
-        dt: femObj.dt ?? defaultValues.dt,
-        tf: femObj.tf ?? defaultValues.tf,
-        c: femObj.c ?? defaultValues.c,
-        theta: femObj.theta ?? defaultValues.theta,
+        beta_start: femObj.beta_start,
+        beta_end: femObj.beta_end,
+        beta_step: femObj.beta_step,
+        order: femObj.order,
+        L: femObj.L,
+        nx: femObj.nx,
+        t0: femObj.t0,
+        dt: femObj.dt,
+        tf: femObj.tf,
+        c: femObj.c,
+        theta: femObj.theta,
 
         // Model Base
         model_type: formModelType,
-        epochs: solverObj.epochs ?? solverObj.n_epochs ?? defaultValues.epochs,
-        batch_size: solverObj.batch_size ?? defaultValues.batch_size,
+        epochs: solverObj.epochs,
+        batch_size: solverObj.batch_size,
         pretrained_model_hash: modelHash, // Automatically inject the hash
 
         // DeepONet / NOMAD specifics
@@ -99,7 +75,7 @@ const mapRegistryToFormValues = (
         lr_scheduler_type: schedulerType,
         ca_lr_max: scheduler.lr_max ?? defaultValues.ca_lr_max,
         ca_lr_min: scheduler.lr_min ?? defaultValues.ca_lr_min,
-        rop_start_lr: scheduler.start_lr ?? defaultValues.rop_start_lr,
+        rop_start_lr: scheduler.current_lr ?? defaultValues.rop_start_lr,
         rop_min_lr: scheduler.min_lr ?? defaultValues.rop_min_lr,
         rop_factor: scheduler.factor ?? defaultValues.rop_factor,
         rop_patience: scheduler.patience ?? defaultValues.rop_patience,

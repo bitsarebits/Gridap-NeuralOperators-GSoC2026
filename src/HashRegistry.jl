@@ -21,8 +21,20 @@ end
 
 # Internal helper to save in the JSON registry
 function _save_registry(registry::AbstractDict)
-    open(REGISTRY_PATH, "w") do f
-        JSON.print(f, registry, 4)
+    mkpath(dirname(REGISTRY_PATH))
+    tmp_path = REGISTRY_PATH * ".tmp"
+
+    try
+        open(tmp_path, "w") do f
+            JSON.print(f, registry, 4)
+            flush(f)
+        end
+
+        # Replace the registry only after serialization succeeds.
+        mv(tmp_path, REGISTRY_PATH; force=true)
+    catch
+        isfile(tmp_path) && rm(tmp_path; force=true)
+        rethrow()
     end
 end
 
@@ -58,11 +70,18 @@ config_hash(config::Any) = config_hash(struct_to_dict(config))
 Loads the JSON registry. If it does not exist, creates the base structure.
 """
 function load_registry()
-    if isfile(REGISTRY_PATH)
-        return JSON.parsefile(REGISTRY_PATH)
-    else
-        return Dict{String,Any}("data" => Dict(), "models" => Dict(), "evaluations" => Dict())
+    if !isfile(REGISTRY_PATH) || filesize(REGISTRY_PATH) == 0
+        registry = Dict{String,Any}(
+            "data" => Dict{String,Any}(),
+            "models" => Dict{String,Any}(),
+            "evaluations" => Dict{String,Any}()
+        )
+
+        _save_registry(registry)
+        return registry
     end
+
+    return JSON.parsefile(REGISTRY_PATH)
 end
 
 """

@@ -11,6 +11,38 @@ export execute_train_pipeline, execute_plot_pipeline
 # in the evaluation hash prevents stale cached reports from being reused.
 const EVALUATION_BENCHMARK_VERSION = 2
 
+function model_config_for_hash(
+    solver::AbstractNeuralSolver,
+    data_hash::String,
+)
+    solver_config = HashRegistry.struct_to_dict(solver)
+    scheduler_config = solver_config["lr_scheduler"]
+
+    # Exclude runtime state from the model identity.
+    pop!(scheduler_config, "wait", nothing)
+    pop!(scheduler_config, "best_loss", nothing)
+
+    # Persist the scheduler type as part of the canonical configuration.
+    scheduler_config["type"] = string(nameof(typeof(solver.lr_scheduler)))
+
+    return Dict(
+        "solver_type" => get_solver_name(solver),
+        "solver" => solver_config,
+        "data_hash" => data_hash,
+    )
+end
+
+function evaluation_config_for_hash(
+    model_hash::String,
+    eval_config::EvalConfig,
+)
+    return Dict(
+        "model_hash" => model_hash,
+        "eval_config" => HashRegistry.struct_to_dict(eval_config),
+        "benchmark_version" => EVALUATION_BENCHMARK_VERSION,
+    )
+end
+
 """Linearly interpolate a spatial-by-time prediction matrix onto a target time grid."""
 function interpolate_time_grid(
     u_pred::AbstractMatrix,
@@ -28,7 +60,7 @@ function interpolate_time_grid(
 
     tolerance = 1e-10 * max(1.0, abs(Float64(first(t_source))), abs(Float64(last(t_source))))
     (minimum(t_target) >= first(t_source) - tolerance &&
-     maximum(t_target) <= last(t_source) + tolerance) ||
+        maximum(t_target) <= last(t_source) + tolerance) ||
         throw(ArgumentError("Prediction time grid does not cover the full FEM evaluation grid."))
 
     result = Matrix{Float64}(undef, size(u_pred, 1), length(t_target))
@@ -91,27 +123,26 @@ function execute_train_pipeline(
 
         parent_model_entry = registry["models"][parent_hash]
 
-        # Backward compatibility for legacy flat JSON schemas
-        parent_solver = haskey(parent_model_entry, "solver") ? parent_model_entry["solver"] : parent_model_entry
-        parent_type = get(parent_model_entry, "solver_type", get(parent_model_entry, "model_type", "unknown"))
+        parent_solver = parent_model_entry["solver"]
+        parent_type = parent_model_entry["solver_type"]
 
         # Verify Model Type
-        if parent_type != "unknown" && lowercase(parent_type) != lowercase(solver_name)
+        if lowercase(parent_type) != lowercase(solver_name)
             error("Architecture mismatch! Cannot fine-tune a $(parent_type) into a $solver_name.")
         end
 
-        # Verify specific structural fields based on the solver type (using safe 'get' to prevent KeyError on older registries)
+        # Validate architecture fields against the canonical model registry entry
         if solver isa DeepONetSolver || solver isa NOMADSolver
-            if get(parent_solver, "m_sensors", 100) != solver.m_sensors ||
-                get(parent_solver, "p_latent", 64) != solver.p_latent ||
-                get(parent_solver, "hidden", 64) != solver.hidden ||
-                get(parent_solver, "step_x", 10) != solver.step_x ||
-                get(parent_solver, "step_t", 5) != solver.step_t
+            if parent_solver["m_sensors"] != solver.m_sensors ||
+                parent_solver["p_latent"] != solver.p_latent ||
+                parent_solver["hidden"] != solver.hidden ||
+                parent_solver["step_x"] != solver.step_x ||
+                parent_solver["step_t"] != solver.step_t
                 error("Architecture mismatch! m_sensors, p_latent, hidden, step_x and step_t must exactly match the pre-trained model.")
             end
         elseif solver isa FNOSolver
-            if get(parent_solver, "nx_red", 256) != solver.nx_red ||
-                get(parent_solver, "nt_red", 50) != solver.nt_red
+            if parent_solver["nx_red"] != solver.nx_red ||
+                parent_solver["nt_red"] != solver.nt_red
                 error("Architecture mismatch! FNO grid resolution (nx_red, nt_red) must exactly match the pre-trained model.")
             end
         end
@@ -119,12 +150,19 @@ function execute_train_pipeline(
         println("Architecture verified. Valid fine-tuning request for parent hash: [$parent_hash]")
     end
 
-    # Dict for deterministic hash
-    config_dict = Dict(
-        "solver_type" => solver_name,
-        "solver" => HashRegistry.struct_to_dict(solver),
-        "data_hash" => data_hash
-    )
+    # Build a deterministic model configuration without runtime scheduler state.
+    solver_config = HashRegistry.struct_to_dict(solver)
+
+    scheduler_config = solver_config["lr_scheduler"]
+
+    # These fields describe the scheduler's runtime state, not its configuration.
+    pop!(scheduler_config, "wait", nothing)
+    pop!(scheduler_config, "best_loss", nothing)
+
+    # Store the concrete scheduler type as part of the configuration.
+    scheduler_config["type"] = string(nameof(typeof(solver.lr_scheduler)))
+
+    config_dict = model_config_for_hash(solver, data_hash)
     model_hash = HashRegistry.config_hash(config_dict)
     weights_path = datadir("models", lowercase(solver_name), "model_$(model_hash).jld2")
 
@@ -157,12 +195,7 @@ function execute_train_pipeline(
     mkpath(datadir("models", lowercase(solver_name)))
     jldsave(weights_path; ps=ps_cpu, st=st_cpu, max_u=max_u, loss_history=loss_history)
 
-    # Store the scheduler's concrete type as display metadata. Keep this field out
-    # of `config_dict` used for hashing so existing model hashes remain stable.
-    registry_config = deepcopy(config_dict)
-    registry_config["solver"]["lr_scheduler"]["type"] =
-        string(nameof(typeof(solver.lr_scheduler)))
-    HashRegistry.update_registry!("models", model_hash, registry_config)
+    HashRegistry.update_registry!("models", model_hash, config_dict)
 
     println("Model weights saved to $weights_path")
     println("$(solver_name) integration script finished successfully")
@@ -197,12 +230,7 @@ function execute_plot_pipeline(
     solver_name = get_solver_name(solver)
     sigma_test = eval_config.sigma_test
 
-    config_dict = Dict(
-        "model_hash" => model_hash,
-        "eval_config" => HashRegistry.struct_to_dict(eval_config),
-        "benchmark_version" => EVALUATION_BENCHMARK_VERSION,
-    )
-
+    config_dict = evaluation_config_for_hash(model_hash, eval_config)
     eval_hash = HashRegistry.config_hash(config_dict)
     save_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).json")
 
@@ -307,7 +335,7 @@ function execute_plot_pipeline(
     worst_t_idx = Int(argmax(rel_l2_t_raw)) - 1 # 0-based index for JS frontend
     global_linf = maximum(linf_t_raw)
 
-    loss_history = get(weights_data, "loss_history", Dict{String,Float32}[])
+    loss_history = weights_data["loss_history"]
 
     eval_payload = Dict(
         "eval_hash" => eval_hash,

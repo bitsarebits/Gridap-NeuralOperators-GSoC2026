@@ -101,26 +101,19 @@ export function useRegistryFilter(registry: RegistryData | undefined) {
             const dataHash = modelObj.data_hash;
             if (!filteredData[dataHash]) return;
 
-            const solverType =
-                modelObj.solver_type ||
-                (modelObj.model_type ? `${modelObj.model_type}Solver` : "");
-            const solverParams = modelObj.solver || modelObj;
+            const solverType = modelObj.solver_type;
+            const solverParams = modelObj.solver;
 
             let isMatch = true;
             for (const key of activeModelFilters) {
                 if (key === "model_type") {
                     if (!solverType.includes(filters[key])) isMatch = false;
                 } else if (key === "epochs") {
-                    const ep = solverParams.epochs || solverParams.n_epochs;
+                    const ep = solverParams.epochs;
                     if (ep !== filters[key]) isMatch = false;
                 } else if (key === "hidden_channels" || key === "modes") {
                     // String/Tuple fields: clean whitespaces and check inclusion
-                    const paramVal = Array.isArray(solverParams[key])
-                        ? solverParams[key].join(",")
-                        : typeof solverParams[key] === "object" &&
-                            solverParams[key] !== null
-                          ? Object.values(solverParams[key]).join(",")
-                          : String(solverParams[key] || "");
+                    const paramVal = (solverParams[key] ?? []).join(",");
 
                     const filterVal = String(filters[key]).replace(/\s+/g, "");
                     const cleanParamVal = paramVal.replace(/\s+/g, "");
@@ -143,7 +136,7 @@ export function useRegistryFilter(registry: RegistryData | undefined) {
             const modelHash = evalObj.model_hash;
             if (!filteredModels[modelHash]) return;
 
-            const evalConfig = evalObj.eval_config || evalObj;
+            const evalConfig = evalObj.eval_config;
             let isMatch = true;
             for (const key of activeEvalFilters) {
                 if (
