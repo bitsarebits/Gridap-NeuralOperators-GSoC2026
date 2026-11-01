@@ -1075,7 +1075,7 @@ serve(
 
 try
     while !IS_SHUTTING_DOWN[]
-        wait(SHUTDOWN_EVENT)
+        sleep(0.1)
     end
 catch e
     if e isa InterruptException

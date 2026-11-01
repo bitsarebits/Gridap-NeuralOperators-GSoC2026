@@ -124,7 +124,7 @@ function App() {
                             className="h-7 sm:h-8 w-auto object-contain"
                         />
                         <span className="font-extrabold text-slate-800 text-lg sm:text-xl hidden sm:block">
-                            GridapROMs Orchestrator
+                            NonlinearROMs
                         </span>
                     </div>
 
