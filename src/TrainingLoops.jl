@@ -304,7 +304,7 @@ function train_nomad!(
                 yield()
                 check_cancelled(should_stop, "epoch $epoch: after yield")
 
-                batch_dev = (
+                batch_dev = batch[1][1] isa Reactant.ConcreteRArray ? batch : (
                     (batch[1][1] |> XDEV, batch[1][2] |> XDEV),
                     batch[2] |> XDEV
                 )
@@ -650,7 +650,8 @@ function prepare_and_train(
     y_in = zeros(Float32, 2, N_tot)
     v_out = zeros(Float32, 1, N_tot)
 
-    x_sensors = range(-fem_config["L"]/2, fem_config["L"]/2, length=m_sensors)
+    L = fem_config["L"]
+    x_sensors = range(-L, L, length=m_sensors)
     pi_f32 = Float32(π)
     snapshots_red = @views snapshots[idx_x, :, idx_t]
 
@@ -690,7 +691,14 @@ function prepare_and_train(
         m_sensors=m_sensors, p_latent=solver.p_latent, hidden=solver.hidden
     )
 
-    dataloader = DataLoader(((u_in, y_in), v_out); batchsize=bs, shuffle=true, partial=false)
+    if bs == N_tot
+        u_in_dev = u_in |> XDEV
+        y_in_dev = y_in |> XDEV
+        v_out_dev = v_out |> XDEV
+        dataloader = [((u_in_dev, y_in_dev), v_out_dev)]
+    else
+        dataloader = DataLoader(((u_in, y_in), v_out); batchsize=bs, shuffle=true, partial=false)
+    end
 
     rng = Random.default_rng()
     Random.seed!(rng, 42)

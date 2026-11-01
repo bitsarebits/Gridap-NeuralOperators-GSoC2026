@@ -1,12 +1,15 @@
 module HashRegistry
 
 using SHA
-using JSON
+using JSON3
 using DrWatson
 
 export config_hash, update_registry!, check_registry, load_registry, save_registry, get_latest_model
 
 const REGISTRY_PATH = datadir("registry.json")
+const REGISTRY_LOCK = ReentrantLock()
+const REGISTRY_CACHE = Ref{Union{Dict{String,Any},Nothing}}(nothing)
+const REGISTRY_MTIME = Ref{Float64}(0.0)
 
 # Helper to convert a struct in a dictionary
 function struct_to_dict(x)
@@ -21,20 +24,22 @@ end
 
 # Internal helper to save in the JSON registry
 function _save_registry(registry::AbstractDict)
-    mkpath(dirname(REGISTRY_PATH))
-    tmp_path = REGISTRY_PATH * ".tmp"
+    lock(REGISTRY_LOCK) do
+        mkpath(dirname(REGISTRY_PATH))
+        tmp_path = REGISTRY_PATH * ".tmp"
 
-    try
-        open(tmp_path, "w") do f
-            JSON.print(f, registry, 4)
-            flush(f)
+        try
+            open(tmp_path, "w") do f
+                JSON3.pretty(f, registry)
+                flush(f)
+            end
+            mv(tmp_path, REGISTRY_PATH; force=true)
+            REGISTRY_CACHE[] = deepcopy(registry)
+            REGISTRY_MTIME[] = stat(REGISTRY_PATH).mtime
+        catch
+            isfile(tmp_path) && rm(tmp_path; force=true)
+            rethrow()
         end
-
-        # Replace the registry only after serialization succeeds.
-        mv(tmp_path, REGISTRY_PATH; force=true)
-    catch
-        isfile(tmp_path) && rm(tmp_path; force=true)
-        rethrow()
     end
 end
 
@@ -43,9 +48,7 @@ end
     save_registry(registry::AbstractDict)
 Saves the modified registry dictionary back to disk.
 """
-function save_registry(registry::AbstractDict)
-    _save_registry(registry)
-end
+save_registry(registry::AbstractDict) = _save_registry(registry)
 
 """
     config_hash(config::Dict)
@@ -70,18 +73,26 @@ config_hash(config::Any) = config_hash(struct_to_dict(config))
 Loads the JSON registry. If it does not exist, creates the base structure.
 """
 function load_registry()
-    if !isfile(REGISTRY_PATH) || filesize(REGISTRY_PATH) == 0
-        registry = Dict{String,Any}(
-            "data" => Dict{String,Any}(),
-            "models" => Dict{String,Any}(),
-            "evaluations" => Dict{String,Any}()
-        )
+    lock(REGISTRY_LOCK) do
+        if !isfile(REGISTRY_PATH) || filesize(REGISTRY_PATH) == 0
+            registry = Dict{String,Any}(
+                "data" => Dict{String,Any}(),
+                "models" => Dict{String,Any}(),
+                "evaluations" => Dict{String,Any}()
+            )
+            _save_registry(registry)
+            return deepcopy(registry)
+        end
 
-        _save_registry(registry)
-        return registry
+        current_mtime = stat(REGISTRY_PATH).mtime
+        if isnothing(REGISTRY_CACHE[]) || current_mtime > REGISTRY_MTIME[]
+            raw = read(REGISTRY_PATH, String)
+            REGISTRY_CACHE[] = JSON3.read(raw, Dict{String,Any})
+            REGISTRY_MTIME[] = current_mtime
+        end
+
+        return deepcopy(REGISTRY_CACHE[])
     end
-
-    return JSON.parsefile(REGISTRY_PATH)
 end
 
 """

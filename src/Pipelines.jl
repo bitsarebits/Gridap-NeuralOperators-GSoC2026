@@ -11,6 +11,33 @@ export execute_train_pipeline, execute_plot_pipeline
 # in the evaluation hash prevents stale cached reports from being reused.
 const EVALUATION_BENCHMARK_VERSION = 2
 
+# Helpers
+
+@inline function _compact_val(x::Real; digits::Int=4, tol::Float32=5f-5)
+    fx = Float32(x)
+    return abs(fx) < tol ? 0.0f0 : round(fx; digits=digits)
+end
+
+_compact_vec(v::AbstractVector; digits::Int=4, tol::Float32=5f-5) =
+    [_compact_val(x; digits=digits, tol=tol) for x in v]
+
+_compact_mat(slices::AbstractVector; digits::Int=4, tol::Float32=5f-5) =
+    [_compact_vec(s; digits=digits, tol=tol) for s in slices]
+
+function _compact_loss_history(loss_history::AbstractVector, max_points::Int=500)
+    n = length(loss_history)
+    n == 0 && return Any[]
+    step = max(1, cld(n, max_points))
+    idx = unique(vcat(1:step:n, n))
+    return [
+        Dict(
+            "epoch" => Int(loss_history[i]["epoch"]),
+            "loss" => signif_loss(loss_history[i]["loss"])
+        ) for i in idx
+    ]
+end
+@inline signif_loss(x::Real) = round(Float64(x); sigdigits=4)
+
 function model_config_for_hash(
     solver::AbstractNeuralSolver,
     data_hash::String,
@@ -331,8 +358,8 @@ function execute_plot_pipeline(
         rel_l2_t_raw[k] = (l2_err / denom) * 100.0
         linf_t_raw[k] = maximum(abs, diff_raw)
 
-        u_true_slices[k] = round.(Float32.(u_t_raw), digits=5)
-        u_pred_slices[k] = round.(Float32.(u_p_raw), digits=5)
+        u_true_slices[k] = Float32.(u_t_raw)
+        u_pred_slices[k] = Float32.(u_p_raw)
     end
 
     mean_rel_l2 = mean(rel_l2_t_raw)
@@ -340,7 +367,28 @@ function execute_plot_pipeline(
     worst_t_idx = Int(argmax(rel_l2_t_raw)) - 1 # 0-based index for JS frontend
     global_linf = maximum(linf_t_raw)
 
-    loss_history = weights_data["loss_history"]
+    vis_step = max(1, fem_config.order)
+    vis_idx = 1:vis_step:N_x
+    x_grid_vis = x_grid[vis_idx]
+
+    u_true_slices = Vector{Vector{Float32}}(undef, N_t_plot)
+    u_pred_slices = Vector{Vector{Float32}}(undef, N_t_plot)
+
+    for k in 1:N_t_plot
+        u_true_slices[k] = Float32.(@view x_hf_raw[vis_idx, k])
+        u_pred_slices[k] = Float32.(@view u_pred_eval[vis_idx, k])
+    end
+
+    x_sensors_vis = if solver isa DeepONetSolver || solver isa NOMADSolver
+        _compact_vec(collect(range(-fem_config.L, fem_config.L, length=solver.m_sensors)); digits=4, tol=1f-7)
+    elseif solver isa FNOSolver
+        idx_fno = round.(Int, range(1, N_x, length=solver.nx_red))
+        _compact_vec(x_grid[idx_fno]; digits=4, tol=1f-7)
+    else
+        Float32[]
+    end
+
+    raw_loss_history = get(weights_data, "loss_history", Any[])
 
     eval_payload = Dict(
         "eval_hash" => eval_hash,
@@ -348,13 +396,14 @@ function execute_plot_pipeline(
         "model_hash" => model_hash,
         "data_hash" => data_hash,
         "solver_name" => replace(solver_name, "Solver" => ""),
-        "x_grid" => round.(x_grid, digits=5),
-        "t_grid" => round.(Float32.(t_grid_eval), digits=5),
-        "u_true" => u_true_slices,
-        "u_pred" => u_pred_slices,
-        "rel_l2_t" => round.(rel_l2_t_raw, digits=4),
-        "linf_t" => round.(linf_t_raw, digits=5),
-        "loss_history" => loss_history,
+        "x_grid" => _compact_vec(x_grid_vis; digits=4, tol=1f-7),
+        "t_grid" => _compact_vec(t_grid_eval; digits=4, tol=1f-7),
+        "x_sensors" => x_sensors_vis,
+        "u_true" => _compact_mat(u_true_slices; digits=4, tol=5f-5),
+        "u_pred" => _compact_mat(u_pred_slices; digits=4, tol=5f-5),
+        "rel_l2_t" => _compact_vec(rel_l2_t_raw; digits=4, tol=1f-7),
+        "linf_t" => _compact_vec(linf_t_raw; digits=6, tol=1f-8),
+        "loss_history" => _compact_loss_history(raw_loss_history),
         "benchmark_protocol" => Dict(
             "version" => EVALUATION_BENCHMARK_VERSION,
             "fem_timing" => "Median of 5 FEM runs after one compilation warm-up.",

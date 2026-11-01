@@ -447,6 +447,7 @@ end
     catch e
         if e isa InterruptException
             @info "WebSocket received Ctrl+C. Broadcasting shutdown event to all threads..."
+            Threads.atomic_xchg!(IS_SHUTTING_DOWN, true)
             notify(SHUTDOWN_EVENT)
         elseif e isa EOFError || e isa Base.IOError
             # WebSocket closed correctly
@@ -497,10 +498,12 @@ end
         fem_config, solver, eval_config = build_configs(payload)
         solver_name = get_solver_name(solver)
 
+        registry = HashRegistry.load_registry()
+
         # Check FEM Data Hash
         data_hash = HashRegistry.config_hash(fem_config)
         data_path = datadir("sims", "data_$(data_hash).jld2")
-        data_exists = HashRegistry.check_registry("data", data_hash) && isfile(data_path)
+        data_exists = haskey(registry["data"], data_hash) && isfile(data_path)
 
         # Check Model Hash
         model_dict = Pipelines.model_config_for_hash(solver, data_hash)
@@ -510,7 +513,7 @@ end
             lowercase(solver_name),
             "model_$(model_hash).jld2",
         )
-        model_exists = HashRegistry.check_registry("models", model_hash) && isfile(model_path)
+        model_exists = haskey(registry["models"], model_hash) && isfile(model_path)
 
         # Check Eval Hash
         eval_dict = Pipelines.evaluation_config_for_hash(model_hash, eval_config)
@@ -519,7 +522,7 @@ end
             lowercase(solver_name),
             "eval_$(eval_hash).json",
         )
-        eval_exists = HashRegistry.check_registry("evaluations", eval_hash) && isfile(eval_path)
+        eval_exists = haskey(registry["evaluations"], eval_hash) && isfile(eval_path)
 
         return JSON3.write(Dict(
             "status" => "success",
@@ -566,8 +569,12 @@ end
         json_path = plotsdir(solver_type, "eval_$(eval_hash).json")
 
         if isfile(json_path)
-            eval_data = JSON3.read(read(json_path, String), Dict{String,Any})
-            return JSON3.write(Dict("status" => "success", "eval_data" => eval_data))
+            raw_json = read(json_path, String)
+            return HTTP.Response(
+                200,
+                ["Content-Type" => "application/json"],
+                """{"status":"success","eval_data":$raw_json}"""
+            )
         else
             return HTTP.Response(
                 404,
@@ -841,7 +848,8 @@ end
             mkpath(dirname(json_path))
             @info "Downloading evaluation JSON [$(eval_hash)]..."
             try
-                HTTP.download(eval_url, json_path)
+                resp = HTTP.get(eval_url)
+                write(json_path, resp.body)
             catch e
                 @error "Failed to download evaluation JSON" exception=(e, catch_backtrace())
                 sync_success = false
@@ -986,17 +994,24 @@ end
 
         if resp.status == 200
             remaining_data = String(resp.body)
+            parsed_page = JSON3.read(remaining_data)
+            # Delete the shared assets only if we are sure that we red all the documents (there is no next page)
+            has_more_pages = haskey(parsed_page, :nextPageToken)
 
-            # Check if model_hash is still referenced anywhere in the remaining JSON
-            if !isnothing(model_hash) && !occursin(model_hash, remaining_data)
-                @info "Model $model_hash is no longer referenced by any public evaluation. Removing from Cloud Storage..."
-                FirebaseREST.delete_from_storage(token, "models/$(model_hash).jld2")
-            end
+            if !has_more_pages
+                # Check if model_hash is still referenced anywhere in the remaining JSON
+                if !isnothing(model_hash) && !occursin(model_hash, remaining_data)
+                    @info "Model $model_hash is no longer referenced. Removing from Cloud Storage..."
+                    FirebaseREST.delete_from_storage(token, "models/$(model_hash).jld2")
+                end
 
-            # Check if data_hash is still referenced anywhere in the remaining JSON
-            if !isnothing(data_hash) && !occursin(data_hash, remaining_data)
-                @info "Data $data_hash is no longer referenced by any public model. Removing from Cloud Storage..."
-                FirebaseREST.delete_from_storage(token, "data/$(data_hash).jld2")
+                # Check if data_hash is still referenced anywhere in the remaining JSON
+                if !isnothing(data_hash) && !occursin(data_hash, remaining_data)
+                    @info "Data $data_hash is no longer referenced. Removing from Cloud Storage..."
+                    FirebaseREST.delete_from_storage(token, "data/$(data_hash).jld2")
+                end
+            else
+                @warn "Firestore collection has multiple pages; skipping automatic storage GC to prevent accidental deletion."
             end
         end
 
@@ -1060,7 +1075,7 @@ serve(
 
 try
     while !IS_SHUTTING_DOWN[]
-        sleep(0.1)
+        wait(SHUTDOWN_EVENT)
     end
 catch e
     if e isa InterruptException

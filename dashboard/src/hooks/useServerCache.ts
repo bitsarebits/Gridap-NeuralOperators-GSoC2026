@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useWatch, type Control } from "react-hook-form";
 import { checkRegistry } from "../api";
 import type { CacheCheckResponse, SimulationPayload } from "../types";
+import { formSchema, type SimulationFormValues } from "../schemas/simulation";
 
 export const useServerCache = (
-    formValues: any,
-    isValid: boolean,
+    control: Control<SimulationFormValues>,
+    buildPayload: (data: SimulationFormValues) => SimulationPayload,
     serverStatus: "connected" | "connecting" | "disconnected",
 ) => {
     const [cacheStatus, setCacheStatus] = useState<CacheCheckResponse | null>(
@@ -13,8 +15,20 @@ export const useServerCache = (
     const [isCheckingCache, setIsCheckingCache] = useState(false);
     const [cacheError, setCacheError] = useState<string | null>(null);
 
+    // useWatch isola i re-render qui dentro senza far ri-renderizzare OrchestratorView
+    const watchedValues = useWatch({ control });
+    const latestValuesRef = useRef(watchedValues);
+    latestValuesRef.current = watchedValues;
+
     const refreshCache = useCallback(async () => {
-        if (serverStatus !== "connected" || !isValid) {
+        if (serverStatus !== "connected") {
+            setCacheStatus(null);
+            setCacheError(null);
+            return;
+        }
+
+        const parsed = formSchema.safeParse(latestValuesRef.current);
+        if (!parsed.success) {
             setCacheStatus(null);
             setCacheError(null);
             return;
@@ -24,8 +38,8 @@ export const useServerCache = (
         setCacheError(null);
 
         try {
-            // formValues must be casted to SimulationPayload
-            const res = await checkRegistry(formValues as SimulationPayload);
+            const payload = buildPayload(parsed.data);
+            const res = await checkRegistry(payload);
             if (res.status === "success") {
                 setCacheStatus(res);
             } else {
@@ -40,16 +54,16 @@ export const useServerCache = (
         } finally {
             setIsCheckingCache(false);
         }
-    }, [JSON.stringify(formValues), serverStatus, isValid]);
+    }, [serverStatus, buildPayload]);
 
-    // Cache check logic (Debounced)
+    // Debounce on watchedValues: execute safeParse and the API call only after 600ms of inactivity
     useEffect(() => {
         const timer = setTimeout(() => {
             refreshCache();
         }, 600);
 
         return () => clearTimeout(timer);
-    }, [refreshCache]);
+    }, [watchedValues, refreshCache]);
 
     return { cacheStatus, isCheckingCache, refreshCache, cacheError };
 };

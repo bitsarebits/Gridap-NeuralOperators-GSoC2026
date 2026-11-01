@@ -86,7 +86,7 @@ function generate_fem_snapshots(
 
     # Convert the GridapROMs custom type into a standard Julia 3D Array
     # This prevents JLD2 type-reconstruction errors during loading
-    x_snapshots = get_all_data(x_snapshots_raw)
+    x_snapshots = Float32.(get_all_data(x_snapshots_raw))
 
     #TODO This is a little hacky, it works as the test case is 1D. For now, it works.
     # In future, you should consider the following:
@@ -97,7 +97,6 @@ function generate_fem_snapshots(
     x_fe_function = interpolate_everywhere(coord_x, V)
 
     # Cast matrices and vectors to Float32 for the training
-    x_snapshots = Float32.(x_snapshots_raw)
     x_grid = Float32.(get_free_dof_values(x_fe_function))
     t_grid = Float32.(tdomain[2:end])
 

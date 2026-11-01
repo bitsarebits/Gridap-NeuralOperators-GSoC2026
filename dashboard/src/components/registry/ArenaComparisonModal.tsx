@@ -60,21 +60,23 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
             setIsLoading(true);
             setError(null);
             try {
-                const results: InteractiveEvalData[] = [];
-                for (const c of candidates) {
-                    if (c.isLocal) {
-                        const res = await fetchEvaluationPlot(
-                            c.evalHash,
-                            c.solverType,
-                        );
-                        if (res.eval_data) {
-                            results.push(res.eval_data);
+                const fetched = await Promise.all(
+                    candidates.map(async (c) => {
+                        if (c.isLocal) {
+                            const res = await fetchEvaluationPlot(
+                                c.evalHash,
+                                c.solverType,
+                            );
+                            return res.eval_data ?? null;
+                        } else if (c.evalUrl) {
+                            return await fetchCloudEvaluationJson(c.evalUrl);
                         }
-                    } else if (c.evalUrl) {
-                        const data = await fetchCloudEvaluationJson(c.evalUrl);
-                        results.push(data);
-                    }
-                }
+                        return null;
+                    }),
+                );
+                const results = fetched.filter(
+                    (item): item is InteractiveEvalData => item !== null,
+                );
                 if (isMounted) {
                     if (
                         results.length === 0 ||

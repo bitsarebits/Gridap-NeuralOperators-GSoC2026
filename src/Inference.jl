@@ -230,10 +230,11 @@ function evaluate_and_predict(
     N_x = length(x_grid)
     N_t = length(t_grid)
 
-    x_sensors = range(-fem_config["L"]/2, fem_config["L"]/2, length=solver.m_sensors)
+    L = fem_config["L"]
+    x_sensors = range(-L, L, length=solver.m_sensors)
     pi_f32 = Float32(π)
     u₀(x) = (1.0f0 / √(2.0f0 * pi_f32 * Float32(sigma_test))) * exp(-x^2 / (2.0f0 * Float32(sigma_test)))
-    f_in = Float32.(u₀.(x_sensors))
+    f_in = Float32.(u₀.(x_sensors)) ./ max_u
     u_test_dev = repeat(f_in, 1, N_x) |> XDEV
 
     # Compile using one representative time slice, then reuse the same compiled

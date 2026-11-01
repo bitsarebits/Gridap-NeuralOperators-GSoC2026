@@ -6,6 +6,26 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
     base: "/Gridap-NeuralOperators-GSoC2026/",
     plugins: [react(), tailwindcss()],
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    if (id.includes("plotly.js-dist-min")) {
+                        return "plotly";
+                    }
+                    if (
+                        id.includes("node_modules/react/") ||
+                        id.includes("node_modules/react-dom/") ||
+                        id.includes("@tanstack/react-query") ||
+                        id.includes("react-hook-form") ||
+                        id.includes("zod")
+                    ) {
+                        return "vendor";
+                    }
+                },
+            },
+        },
+    },
     server: {
         // Proxy API and WebSocket requests to the local Julia backend.
         // This allows VS Code Web Tunnels and LAN devices to use a single port (5173).

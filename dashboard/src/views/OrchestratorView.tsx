@@ -113,16 +113,9 @@ export default function OrchestratorView({
         defaultValues: initialFormValues || defaultValues,
     });
 
-    // Watch all the form values
-    const formValues = methods.watch();
-    const isValid = formSchema.safeParse(formValues).success;
-    const currentPayload = isValid
-        ? buildPayload(formValues as SimulationFormValues)
-        : null;
-
     // Custom hooks
     const { refreshCache, cacheStatus, isCheckingCache, cacheError } =
-        useServerCache(currentPayload, isValid, serverStatus);
+        useServerCache(methods.control, buildPayload, serverStatus);
 
     const {
         isLoading,

@@ -15,16 +15,16 @@ and outputs the predicted scalar field.
 function build_nomad(; m_sensors::Int=200, p_latent::Int=64, hidden::Int=64)
     # Encoder: Maps sensor readings to latent space
     encoder = Chain(
-        Dense(m_sensors => hidden, gelu),
-        Dense(hidden => hidden, gelu),
-        Dense(hidden => p_latent, gelu)
+        Dense(m_sensors => hidden, tanh),
+        Dense(hidden => hidden, tanh),
+        Dense(hidden => p_latent, tanh)
     )
 
     # Decoder: Takes latent vector + 2 coordinates (x, t), outputs u(x,t)
     decoder = Chain(
-        Dense((p_latent + 2) => hidden, gelu),
-        Dense(hidden => hidden, gelu),
-        Dense(hidden => hidden, gelu),
+        Dense((p_latent + 2) => hidden, tanh),
+        Dense(hidden => hidden, tanh),
+        Dense(hidden => hidden, tanh),
         Dense(hidden => 1)
     )
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
     Share2,
     Loader2,
@@ -7,14 +7,13 @@ import {
     AlertCircle,
 } from "lucide-react";
 import { checkShareStatus, shareExperiment } from "../../api";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface ShareButtonProps {
     evalHash: string;
 }
 
 export default function ShareButton({ evalHash }: ShareButtonProps) {
-    const [canShare, setCanShare] = useState<boolean>(false);
     const [isSharing, setIsSharing] = useState<boolean>(false);
     const [publicUrl, setPublicUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -22,18 +21,11 @@ export default function ShareButton({ evalHash }: ShareButtonProps) {
 
     const queryClient = useQueryClient();
 
-    // Capability check on mount
-    useEffect(() => {
-        let isMounted = true;
-        checkShareStatus().then((status) => {
-            if (isMounted) {
-                setCanShare(status);
-            }
-        });
-        return () => {
-            isMounted = false;
-        };
-    }, []);
+    const { data: canShare = false } = useQuery({
+        queryKey: ["server", "canShare"],
+        queryFn: checkShareStatus,
+        staleTime: Infinity,
+    });
 
     // If the server doesn't have Firebase credentials, hide the button completely
     if (!canShare) return null;
@@ -77,7 +69,7 @@ export default function ShareButton({ evalHash }: ShareButtonProps) {
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-xs sm:text-sm bg-white px-2 py-1 rounded shadow-sm hover:bg-green-100 transition-colors"
                 >
-                    View Image <ExternalLink size={14} />
+                    View JSON <ExternalLink size={14} />
                 </a>
             </div>
         );

@@ -76,10 +76,11 @@ export default function InteractiveEvaluationView({
 
     // Precompute 2D error matrix for heatmap
     const absErrorMatrix = useMemo(() => {
+        if (activeTab !== "2d") return [];
         return u_pred.map((upSlice, k) =>
             upSlice.map((val, i) => Math.abs(val - u_true[k][i])),
         );
-    }, [u_pred, u_true]);
+    }, [u_pred, u_true, activeTab]);
 
     // Animation loop for Play/Pause
     useEffect(() => {
@@ -194,8 +195,9 @@ export default function InteractiveEvaluationView({
     );
 
     // 2D Spatio-Temporal Heatmaps (Predicted Field & Pointwise Error)
-    const plot2DData = useMemo<Plotly.Data[]>(
-        () => [
+    const plot2DData = useMemo<Plotly.Data[]>(() => {
+        if (activeTab !== "2d") return [];
+        return [
             {
                 x: x_grid,
                 y: t_grid,
@@ -231,9 +233,8 @@ export default function InteractiveEvaluationView({
                 hovertemplate:
                     "x: %{x:.3f}<br>t: %{y:.3f}s<br>|Error|: %{z:.5e}<extra>Abs Error</extra>",
             },
-        ],
-        [x_grid, t_grid, u_pred, absErrorMatrix],
-    );
+        ];
+    }, [activeTab, x_grid, t_grid, u_pred, absErrorMatrix]);
 
     const plot2DLayout = useMemo<Partial<Plotly.Layout>>(
         () => ({

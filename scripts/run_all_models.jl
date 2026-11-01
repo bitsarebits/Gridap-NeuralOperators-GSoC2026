@@ -79,10 +79,10 @@ end
 if abspath(PROGRAM_FILE) == @__FILE__
     # Terminal usage: julia run_all_models.jl [model_type] [epochs] [test_sigma] [nx]
 
-    m_str = length(ARGS) > 0 ? lowercase(ARGS[1]) : "deeponet"
-    epochs_val = length(ARGS) > 1 ? parse(Int, ARGS[2]) : 20000
-    sigma_val = length(ARGS) > 3 ? parse(Float64, ARGS[3]) : 0.03
-    nx_val = length(ARGS) > 4 ? parse(Int, ARGS[4]) : 1000
+    m_str = length(ARGS) >= 1 ? lowercase(ARGS[1]) : "deeponet"
+    epochs_val = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 20000
+    sigma_val = length(ARGS) >= 3 ? parse(Float64, ARGS[3]) : 0.03
+    nx_val = length(ARGS) >= 4 ? parse(Int, ARGS[4]) : 1000
 
     # Config objects, using default values of Solvers.jl
     fem_config = FEMConfig(nx=nx_val)

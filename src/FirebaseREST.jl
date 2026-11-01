@@ -5,6 +5,7 @@ using JSON3
 using MbedTLS
 using Base64
 using Dates
+using CodecZlib
 
 # Bring in Auth for the credentials
 using ..Auth
@@ -13,6 +14,10 @@ export get_access_token, upload_to_storage, push_to_firestore
 
 const GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 const FIREBASE_SCOPES = "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/devstorage.read_write"
+
+const TOKEN_LOCK = ReentrantLock()
+const CACHED_TOKEN = Ref{Union{String,Nothing}}(nothing)
+const TOKEN_EXPIRY = Ref{Int}(0)
 
 # JWT implementation
 
@@ -63,51 +68,60 @@ Generates a signed RS256 JWT using MbedTLS and the Service Account credentials,
 exchanges it with Google OAuth2, and returns a short-lived Access Token.
 """
 function get_access_token()
-    cred = Auth.get_firebase_credentials()
-    if isnothing(cred)
-        @error "Cannot generate Access Token: Firebase credentials missing."
-        return nothing
-    end
-
-    client_email = cred["client_email"]
-    private_key_pem = cred["private_key"]
-
     now_sec = floor(Int, datetime2unix(now(UTC)))
-    exp_sec = now_sec + 3600
 
-    claim = Dict(
-        "iss" => client_email,
-        "scope" => FIREBASE_SCOPES,
-        "aud" => GOOGLE_TOKEN_URI,
-        "exp" => exp_sec,
-        "iat" => now_sec
-    )
+    lock(TOKEN_LOCK) do
+        if !isnothing(CACHED_TOKEN[]) && now_sec < (TOKEN_EXPIRY[] - 60)
+            return CACHED_TOKEN[]
+        end
 
-    local signed_jwt::String
-    try
-        signed_jwt = _sign_rs256_jwt(claim, private_key_pem)
-    catch e
-        @error "Failed to sign JWT with the provided PEM key" exception=(e, catch_backtrace())
-        return nothing
-    end
-
-    headers = ["Content-Type" => "application/x-www-form-urlencoded"]
-    body = "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=$(signed_jwt)"
-
-    try
-        response = HTTP.post(GOOGLE_TOKEN_URI, headers, body; status_exception=false)
-
-        if response.status >= 200 && response.status < 300
-            resp_data = JSON3.read(response.body)
-            @debug "Google OAuth Access Token successfully retrieved."
-            return String(resp_data.access_token)
-        else
-            @error "OAuth HTTP Error" status=response.status body=String(response.body)
+        cred = Auth.get_firebase_credentials()
+        if isnothing(cred)
+            @error "Cannot generate Access Token: Firebase credentials missing."
             return nothing
         end
-    catch e
-        @error "Network failure during Google Access Token retrieval" exception=(e, catch_backtrace())
-        return nothing
+
+        client_email = cred["client_email"]
+        private_key_pem = cred["private_key"]
+        exp_sec = now_sec + 3600
+
+        claim = Dict(
+            "iss" => client_email,
+            "scope" => FIREBASE_SCOPES,
+            "aud" => GOOGLE_TOKEN_URI,
+            "exp" => exp_sec,
+            "iat" => now_sec
+        )
+
+        local signed_jwt::String
+        try
+            signed_jwt = _sign_rs256_jwt(claim, private_key_pem)
+        catch e
+            @error "Failed to sign JWT with the provided PEM key" exception=(e, catch_backtrace())
+            return nothing
+        end
+
+        headers = ["Content-Type" => "application/x-www-form-urlencoded"]
+        body = "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=$(signed_jwt)"
+
+        try
+            response = HTTP.post(GOOGLE_TOKEN_URI, headers, body; status_exception=false)
+
+            if response.status >= 200 && response.status < 300
+                resp_data = JSON3.read(response.body)
+                token_str = String(resp_data.access_token)
+                CACHED_TOKEN[] = token_str
+                TOKEN_EXPIRY[] = exp_sec
+                @debug "Google OAuth Access Token successfully retrieved and cached."
+                return token_str
+            else
+                @error "OAuth HTTP Error" status=response.status body=String(response.body)
+                return nothing
+            end
+        catch e
+            @error "Network failure during Google Access Token retrieval" exception=(e, catch_backtrace())
+            return nothing
+        end
     end
 end
 
@@ -157,20 +171,41 @@ function upload_to_storage(access_token::String, file_path::String, destination_
     safe_dest = HTTP.URIs.escapeuri(destination_name)
     bucket_name = "$(project_id).firebasestorage.app"
 
-    upload_url = "https://storage.googleapis.com/upload/storage/v1/b/$(bucket_name)/o?uploadType=media&name=$(safe_dest)"
+    raw_bytes = read(file_path)
+    is_json = endswith(destination_name, ".json")
+    file_bytes = is_json ? transcode(GzipCompressor, raw_bytes) : raw_bytes
+
+    upload_url = "https://storage.googleapis.com/upload/storage/v1/b/$(bucket_name)/o?uploadType=multipart"
+
+    metadata = Dict{String,Any}(
+        "name" => destination_name,
+        "contentType" => content_type,
+        "cacheControl" => "public, max-age=31536000, immutable"
+    )
+    if is_json
+        metadata["contentEncoding"] = "gzip"
+    end
+
+    boundary = "===============gridap_gcs_$(rand(UInt64))=="
+    body_io = IOBuffer()
+    write(body_io, "--$boundary\r\n")
+    write(body_io, "Content-Type: application/json; charset=UTF-8\r\n\r\n")
+    write(body_io, JSON3.write(metadata), "\r\n")
+    write(body_io, "--$boundary\r\n")
+    write(body_io, "Content-Type: $content_type\r\n\r\n")
+    write(body_io, file_bytes, "\r\n")
+    write(body_io, "--$boundary--\r\n")
 
     headers = [
         "Authorization" => "Bearer $access_token",
-        "Content-Type" => content_type
+        "Content-Type" => "multipart/related; boundary=$boundary"
     ]
 
-    file_bytes = read(file_path)
-
     try
-        response = HTTP.post(upload_url, headers, file_bytes; status_exception=false)
+        response = HTTP.post(upload_url, headers, take!(body_io); status_exception=false)
 
         if response.status >= 200 && response.status < 300
-            @info "Successfully uploaded $(destination_name) to Firebase Storage."
+            @info "Successfully uploaded $(destination_name) to Firebase Storage ($(length(file_bytes)) bytes)."
             return "https://firebasestorage.googleapis.com/v0/b/$(bucket_name)/o/$(safe_dest)?alt=media"
         else
             @error "Firebase Storage HTTP Error" status=response.status body=String(response.body)
