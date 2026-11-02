@@ -45,11 +45,11 @@ export default function SyncWorkspaceButton({
     };
 
     return (
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
             <button
                 onClick={handleSync}
                 disabled={isSyncing}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg font-semibold transition-all shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg font-semibold transition-all shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
                 title="Download required files to your local DrWatson folders"
             >
                 {isSyncing ? (

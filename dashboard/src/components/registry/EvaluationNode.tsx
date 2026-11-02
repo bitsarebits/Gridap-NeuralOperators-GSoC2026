@@ -209,7 +209,7 @@ export default function EvaluationNode({
             </div>
 
             {isExpanded && (
-                <div className="border-t border-slate-100 bg-slate-50/50 p-2.5 sm:p-4 flex flex-col items-center gap-3 animate-in fade-in duration-200">
+                <div className="border-t border-slate-100 bg-slate-50/50 p-2 sm:p-4 flex flex-col items-center gap-3 animate-in fade-in duration-200">
                     {isLoading ? (
                         <div className="flex items-center gap-2 py-6 text-xs font-medium text-slate-500">
                             <Loader2
@@ -220,13 +220,13 @@ export default function EvaluationNode({
                         </div>
                     ) : evalData ? (
                         <>
-                            <div className="w-full">
+                            <div className="w-full min-w-0">
                                 <InteractiveEvaluationView
                                     evalData={evalData}
                                     compact={true}
                                 />
                             </div>
-                            <div className="w-full flex flex-wrap justify-end items-center gap-2 mt-2">
+                            <div className="w-full flex flex-col sm:flex-row sm:flex-wrap justify-end items-stretch sm:items-center gap-2 mt-2">
                                 {isShared && serverIsConnected && (
                                     <DeleteButton
                                         targetHash={evalHash}

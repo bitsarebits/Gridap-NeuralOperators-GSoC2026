@@ -157,7 +157,7 @@ export default function DatasetNode({
             </div>
 
             {isExpanded && (
-                <div className="bg-slate-50/30 p-2.5 sm:p-4 flex flex-col gap-3 border-b border-slate-100 animate-in slide-in-from-top-2 duration-200">
+                <div className="bg-slate-50/30 p-1.5 sm:p-4 flex flex-col gap-3 border-b border-slate-100 animate-in slide-in-from-top-2 duration-200">
                     <ConfigGrid
                         title="Physical & Numerical Setup"
                         configObj={femConfig}

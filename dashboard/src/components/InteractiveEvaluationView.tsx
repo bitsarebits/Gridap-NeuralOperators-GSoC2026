@@ -152,7 +152,7 @@ export default function InteractiveEvaluationView({
                 subplots: ["xy", "xy2"],
                 roworder: "top to bottom",
             },
-            margin: { l: 52, r: 15, t: 40, b: 42 },
+            margin: { l: 46, r: 12, t: 64, b: 40 },
             hovermode: "x unified",
             legend: {
                 orientation: "h",
@@ -160,7 +160,7 @@ export default function InteractiveEvaluationView({
                 y: 1.02,
                 xanchor: "left",
                 x: 0,
-                font: { size: 11 },
+                font: { size: 10 },
             },
             xaxis: {
                 title: { text: "Spatial Coordinate (x)", font: { size: 11 } },
@@ -451,7 +451,7 @@ export default function InteractiveEvaluationView({
                                 setTIdx(metrics.worst_t_idx);
                                 setActiveTab("1d");
                             }}
-                            className="px-2 py-1 text-[10px] font-bold bg-amber-200/80 hover:bg-amber-300 text-amber-900 rounded-md transition-colors cursor-pointer shrink-0"
+                            className="px-2 py-1 text-[10px] font-bold bg-amber-200/80 hover:bg-amber-300 text-amber-900 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 dark:border dark:border-amber-500/40 dark:text-amber-300 rounded-md transition-colors cursor-pointer shrink-0"
                             title="Jump Time-Machine to the worst error timestep"
                         >
                             Jump to Peak
@@ -628,7 +628,7 @@ export default function InteractiveEvaluationView({
 
             {/* 4. TEMPORAL ERROR EVOLUTION STRIP E(t) & PLAYBACK CONTROLLER */}
             {activeTab !== "loss" && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-4 flex flex-col gap-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 sm:p-4 flex flex-col gap-3 overflow-hidden">
                     {/* E(t) Interactive Strip */}
                     <div className="h-28 w-full bg-white rounded-lg border border-slate-100 p-1">
                         <PlotlyChart
@@ -640,10 +640,10 @@ export default function InteractiveEvaluationView({
                     </div>
 
                     {/* Scrubber & Transport Controls */}
-                    <div className="flex flex-col md:flex-row md:flex-wrap items-stretch md:items-center justify-between gap-3 sm:gap-4">
+                    <div className="flex flex-col md:flex-row md:flex-wrap items-stretch md:items-center justify-between gap-3">
                         {/* Transport Buttons */}
-                        <div className="flex items-center justify-between sm:justify-start gap-2">
-                            <div className="flex items-center gap-1.5 sm:gap-2">
+                        <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2 w-full md:w-auto">
+                            <div className="flex items-center gap-1.5">
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -652,25 +652,25 @@ export default function InteractiveEvaluationView({
                                             prev > 0 ? prev - 1 : numSteps - 1,
                                         );
                                     }}
-                                    className="p-2 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
+                                    className="p-2 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer shrink-0"
                                     title="Previous timestep"
                                 >
-                                    <SkipBack size={16} />
+                                    <SkipBack size={15} />
                                 </button>
 
                                 <button
                                     type="button"
                                     onClick={() => setIsPlaying(!isPlaying)}
-                                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                                    className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer shrink-0"
                                 >
                                     {isPlaying ? (
                                         <>
-                                            <Pause size={15} /> Pause
+                                            <Pause size={14} /> Pause
                                         </>
                                     ) : (
                                         <>
                                             <Play
-                                                size={15}
+                                                size={14}
                                                 fill="currentColor"
                                             />{" "}
                                             Play
@@ -686,10 +686,10 @@ export default function InteractiveEvaluationView({
                                             (prev) => (prev + 1) % numSteps,
                                         );
                                     }}
-                                    className="p-2 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer"
+                                    className="p-2 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer shrink-0"
                                     title="Next timestep"
                                 >
-                                    <SkipForward size={16} />
+                                    <SkipForward size={15} />
                                 </button>
                             </div>
 
@@ -699,7 +699,7 @@ export default function InteractiveEvaluationView({
                                 onChange={(e) =>
                                     setPlaybackSpeed(Number(e.target.value))
                                 }
-                                className="px-2 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-lg text-slate-700"
+                                className="px-2.5 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-lg text-slate-700 shrink-0"
                                 title="Playback speed"
                             >
                                 <option value={0.25}>0.25x</option>
@@ -709,9 +709,9 @@ export default function InteractiveEvaluationView({
                             </select>
                         </div>
 
-                        {/* Time Slider - Full width on mobile for smooth touch scrubbing */}
-                        <div className="w-full md:flex-1 md:min-w-50 flex items-center gap-2 sm:gap-3">
-                            <span className="text-[11px] sm:text-xs font-mono text-slate-500 shrink-0">
+                        {/* Time Slider */}
+                        <div className="w-full md:flex-1 md:min-w-50 flex items-center gap-2 min-w-0">
+                            <span className="text-[10px] sm:text-xs font-mono text-slate-500 shrink-0">
                                 t₀={t_grid[0]?.toFixed(2)}s
                             </span>
                             <input
@@ -723,23 +723,23 @@ export default function InteractiveEvaluationView({
                                     setIsPlaying(false);
                                     setTIdx(Number(e.target.value));
                                 }}
-                                className="w-full accent-blue-600 cursor-pointer"
+                                className="w-full min-w-0 accent-blue-600 cursor-pointer"
                             />
-                            <span className="text-[11px] sm:text-xs font-mono text-slate-500 shrink-0">
+                            <span className="text-[10px] sm:text-xs font-mono text-slate-500 shrink-0">
                                 tf={t_grid[numSteps - 1]?.toFixed(2)}s
                             </span>
                         </div>
 
                         {/* Live Timestep Readout Badges */}
-                        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 sm:gap-2 font-mono text-[11px] sm:text-xs">
-                            <span className="px-2 sm:px-2.5 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-800">
+                        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-end gap-1.5 sm:gap-2 font-mono text-[11px] sm:text-xs w-full md:w-auto">
+                            <span className="col-span-2 sm:col-span-1 text-center px-2.5 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-800">
                                 t = {currentT.toFixed(3)}s ({tIdx + 1}/
                                 {numSteps})
                             </span>
-                            <span className="px-2 sm:px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg font-bold text-amber-800">
+                            <span className="text-center px-2 py-1 bg-amber-50 border border-amber-200 rounded-lg font-bold text-amber-800">
                                 L₂: {(rel_l2_t[tIdx] ?? 0).toFixed(2)}%
                             </span>
-                            <span className="px-2 sm:px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-lg font-bold text-emerald-800">
+                            <span className="text-center px-2 py-1 bg-emerald-50 border border-emerald-200 rounded-lg font-bold text-emerald-800">
                                 L∞: {(linf_t[tIdx] ?? 0).toExponential(2)}
                             </span>
                         </div>

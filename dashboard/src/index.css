@@ -1,1 +1,147 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+    html {
+        scroll-behavior: smooth;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    html.dark {
+        color-scheme: dark;
+        background-color: #09090b;
+        color: #f4f4f5;
+    }
+}
+
+/* Adapt dark mode */
+html.dark .bg-slate-50 {
+    background-color: #09090b !important;
+}
+html.dark .bg-slate-50\/70,
+html.dark .bg-slate-50\/50,
+html.dark .bg-slate-50\/40,
+html.dark .bg-slate-50\/30,
+html.dark .bg-slate-50\/20 {
+    background-color: rgba(24, 24, 27, 0.65) !important;
+}
+html.dark .bg-white {
+    background-color: #18181b !important;
+}
+html.dark .bg-slate-100,
+html.dark .bg-slate-100\/80 {
+    background-color: #27272a !important;
+}
+html.dark .bg-slate-200 {
+    background-color: #3f3f46 !important;
+}
+
+/* text */
+html.dark .text-slate-900,
+html.dark .text-slate-800 {
+    color: #f4f4f5 !important;
+}
+html.dark .text-slate-700 {
+    color: #e4e4e7 !important;
+}
+html.dark .text-slate-600 {
+    color: #a1a1aa !important;
+}
+html.dark .text-slate-500 {
+    color: #71717a !important;
+}
+
+/* borders and dividers */
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-300,
+html.dark .border-b,
+html.dark .border-t {
+    border-color: #27272a !important;
+}
+html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+    border-color: #27272a !important;
+}
+
+/* Input and select in forms and filters */
+html.dark input:not([type="range"]),
+html.dark select {
+    background-color: #09090b !important;
+    color: #f4f4f5 !important;
+    border-color: #3f3f46 !important;
+}
+
+/* Box colors (ModelConfig, EvalConfig, KPI Cards, Badges) */
+html.dark .bg-blue-50,
+html.dark .bg-blue-50\/70 {
+    background-color: rgba(30, 58, 138, 0.22) !important;
+}
+html.dark .border-blue-100,
+html.dark .border-blue-200,
+html.dark .border-blue-300 {
+    border-color: rgba(59, 130, 246, 0.35) !important;
+}
+html.dark .text-blue-900,
+html.dark .text-blue-800,
+html.dark .text-blue-700 {
+    color: #93c5fd !important;
+}
+
+html.dark .bg-indigo-50,
+html.dark .bg-indigo-50\/50,
+html.dark .bg-indigo-100 {
+    background-color: rgba(49, 46, 129, 0.25) !important;
+}
+html.dark .border-indigo-100,
+html.dark .border-indigo-200 {
+    border-color: rgba(99, 102, 241, 0.35) !important;
+}
+html.dark .text-indigo-900,
+html.dark .text-indigo-700,
+html.dark .text-indigo-600 {
+    color: #a5b4fc !important;
+}
+
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-50\/70,
+html.dark .bg-emerald-100 {
+    background-color: rgba(6, 78, 59, 0.25) !important;
+}
+html.dark .border-emerald-100,
+html.dark .border-emerald-200 {
+    border-color: rgba(16, 185, 129, 0.35) !important;
+}
+html.dark .text-emerald-900,
+html.dark .text-emerald-800,
+html.dark .text-emerald-700 {
+    color: #6ee7b7 !important;
+}
+
+html.dark .bg-amber-50,
+html.dark .bg-amber-50\/70,
+html.dark .bg-amber-100 {
+    background-color: rgba(120, 53, 15, 0.25) !important;
+}
+html.dark .border-amber-200,
+html.dark .border-amber-300 {
+    border-color: rgba(245, 158, 11, 0.35) !important;
+}
+html.dark .text-amber-900,
+html.dark .text-amber-800,
+html.dark .text-amber-700 {
+    color: #fcd34d !important;
+}
+
+html.dark .bg-red-50,
+html.dark .bg-rose-50 {
+    background-color: rgba(127, 29, 29, 0.25) !important;
+}
+html.dark .border-red-200,
+html.dark .border-rose-200 {
+    border-color: rgba(239, 68, 68, 0.35) !important;
+}
+html.dark .text-red-700,
+html.dark .text-red-600,
+html.dark .text-rose-600 {
+    color: #fca5a5 !important;
+}

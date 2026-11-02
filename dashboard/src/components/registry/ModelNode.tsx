@@ -304,7 +304,7 @@ export default function ModelNode({
             </div>
 
             {isExpanded && (
-                <div className="bg-slate-50/20 p-2.5 sm:p-4 flex flex-col gap-3 animate-in slide-in-from-top-1 duration-150">
+                <div className="bg-slate-50/20 p-1.5 sm:p-4 flex flex-col gap-3 animate-in slide-in-from-top-1 duration-150">
                     <ConfigGrid
                         title="Architecture & Training Configuration"
                         configObj={sanitizedSolver}

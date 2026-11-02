@@ -88,7 +88,7 @@ export default function DeleteButton({
                 e.stopPropagation(); // Prevent the opening/closing of the accordion
                 setConfirmPhase(true);
             }}
-            className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:text-red-600 hover:border-red-200 hover:bg-red-50 rounded-lg shadow-sm transition-all text-left"
+            className="w-full sm:w-auto flex items-center justify-center sm:justify-start gap-2 px-3 py-2 text-xs sm:text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:text-red-600 hover:border-red-200 hover:bg-red-50 rounded-lg shadow-sm transition-all"
             title={`Delete ${mode} ${targetType}`}
         >
             <Trash2 size={16} className="sm:w-4.5 sm:h-4.5 shrink-0" />
