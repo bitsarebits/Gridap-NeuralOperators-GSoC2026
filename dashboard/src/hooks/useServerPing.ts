@@ -1,12 +1,18 @@
 import { useState, useEffect } from "react";
 import { pingServer } from "../api";
 
+const isGitHubPages =
+    typeof window !== "undefined" &&
+    window.location.hostname.endsWith("github.io");
+
 export const useServerPing = () => {
     const [serverStatus, setServerStatus] = useState<
         "connecting" | "connected" | "disconnected"
-    >("connecting");
+    >(() => (isGitHubPages ? "disconnected" : "connecting"));
 
     useEffect(() => {
+        if (isGitHubPages) return;
+
         let isMounted = true;
         let retries = 0;
         const MAX_RETRIES = 48;

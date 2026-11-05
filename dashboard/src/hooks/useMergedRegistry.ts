@@ -43,6 +43,14 @@ export const useMergedRegistry = () => {
     return useQuery({
         queryKey: ["registry", "merged"],
         queryFn: async () => {
+            const isGitHubPages =
+                typeof window !== "undefined" &&
+                window.location.hostname.endsWith("github.io");
+
+            if (isGitHubPages) {
+                return await fetchSharedRegistry();
+            }
+
             const [localRes, sharedData] = await Promise.allSettled([
                 fetchRegistry(),
                 fetchSharedRegistry(),

@@ -169,11 +169,16 @@ export const fetchEvaluationJson = async (
 };
 
 export const checkShareStatus = async (): Promise<boolean> => {
+    if (
+        typeof window !== "undefined" &&
+        window.location.hostname.endsWith("github.io")
+    ) {
+        return false;
+    }
     try {
         const response = await api.get("/api/status");
         return response.data.canShare === true;
-    } catch (error) {
-        console.error("Failed to check share status", error);
+    } catch {
         return false;
     }
 };
