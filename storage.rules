@@ -2,11 +2,11 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    // Block all unauthenticated and direct client reads and writes.
+    // Files are accessible only via the Firebase Admin SDK (Cloud Functions)
+    // and the server-to-server authenticated Julia backend Service Account.
     match /{allPaths=**} {
-      // Public read-only access for evaluating ROM plots.
-      // Write access is exclusively granted via the Julia backend.
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if false;
     }
   }
 }

@@ -9,7 +9,7 @@ import {
     HardDrive,
     Trophy,
 } from "lucide-react";
-import { fetchCloudEvaluationJson, fetchEvaluationPlot } from "../../api";
+import { fetchEvaluationJson } from "../../api";
 import ShareButton from "../ui/ShareButton";
 import SyncWorkspaceButton from "../ui/SyncWorkspaceButton";
 import InteractiveEvaluationView from "../InteractiveEvaluationView";
@@ -85,31 +85,13 @@ export default function EvaluationNode({
             setIsLoading(true);
             setError(null);
             try {
-                if (isLocal) {
-                    if (!serverIsConnected) {
-                        throw new Error(
-                            "Connect to the Julia server to load this evaluation.",
-                        );
-                    }
-                    const res = await fetchEvaluationPlot(evalHash, solverType);
-                    if (res.status !== "success" || !res.eval_data) {
-                        throw new Error(
-                            res.message ||
-                                "Interactive evaluation JSON not found.",
-                        );
-                    }
-                    setEvalData(res.eval_data);
-                } else {
-                    if (!evalObj.eval_url) {
-                        throw new Error(
-                            "Evaluation JSON URL is missing from the shared registry.",
-                        );
-                    }
-                    const cloudData = await fetchCloudEvaluationJson(
-                        evalObj.eval_url,
-                    );
-                    setEvalData(cloudData);
-                }
+                const data = await fetchEvaluationJson(evalHash, solverType, {
+                    isLocal,
+                    isShared,
+                    serverIsConnected,
+                    evalUrl: evalObj.eval_url,
+                });
+                setEvalData(data);
             } catch (err) {
                 console.error("Failed to load evaluation:", err);
                 setError(
@@ -128,7 +110,7 @@ export default function EvaluationNode({
     const numericSigma = Number(sigmaTest);
     const hasInteractiveArtifact =
         evalObj.benchmark_version === 2 &&
-        (isLocal || Boolean(evalObj.eval_url));
+        (isLocal || (isShared && Boolean(evalObj.eval_url)));
 
     const isArenaCompatible =
         hasInteractiveArtifact &&
@@ -164,6 +146,8 @@ export default function EvaluationNode({
                                     sigmaTest,
                                     evalUrl: evalObj.eval_url,
                                     isLocal,
+                                    isShared,
+                                    serverIsConnected,
                                 });
                             }}
                             className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold transition-all cursor-pointer ${
@@ -190,6 +174,11 @@ export default function EvaluationNode({
                     {isLocal && (
                         <span className="flex items-center gap-1 text-[9px] uppercase font-bold tracking-wider bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full border border-slate-200">
                             <HardDrive size={10} /> Local
+                        </span>
+                    )}
+                    {!isLocal && !isShared && (
+                        <span className="text-[9px] uppercase font-bold tracking-wider bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full border border-amber-200">
+                            Not on disk
                         </span>
                     )}
                     <span className="font-mono text-[10px] text-slate-400 bg-slate-50 px-1 py-0.5 rounded select-all">
@@ -266,6 +255,15 @@ export default function EvaluationNode({
                                 {error ||
                                     `The evaluation file for '${evalHash}' was not found.`}
                             </span>
+                            {isShared && !isLocal && serverIsConnected && syncPayload && (
+                                <div className="ml-auto">
+                                    <SyncWorkspaceButton
+                                        isLocal={false}
+                                        syncPayload={syncPayload}
+                                        buttonLabel="Sync Evaluation to Workspace"
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

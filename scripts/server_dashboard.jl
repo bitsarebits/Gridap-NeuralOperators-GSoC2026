@@ -16,6 +16,7 @@ using DrWatson
 using Oxygen
 using HTTP
 using JSON3
+using CodecZlib
 using Sockets
 using UUIDs
 using Dates
@@ -25,6 +26,7 @@ using experiments_NeuralOperators.Solvers
 using experiments_NeuralOperators.LRSchedulers
 using experiments_NeuralOperators.Auth
 using experiments_NeuralOperators.FirebaseREST
+using experiments_NeuralOperators.RegistryArtifacts
 include("run_all_models.jl")
 
 # Check for credentials via autodiscovery
@@ -70,22 +72,66 @@ const ACTIVE_WS = Set{HTTP.WebSocket}()
 # CORS Middleware
 # Required during development because Vite runs on port 5173
 # and Julia runs on port 8080. This allows them to communicate.
-function cors_middleware(handler)
+const ALLOWED_ORIGINS = Set([
+    "http://127.0.0.1:8080",
+    "http://localhost:8080",
+    "http://127.0.0.1:5173",
+    "http://localhost:5173"
+])
+
+const ALLOWED_HOSTS = Set([
+    "127.0.0.1:8080",
+    "localhost:8080",
+    "127.0.0.1:5173",
+    "localhost:5173"
+])
+
+function security_and_cors_middleware(handler)
     return function (req::HTTP.Request)
-        # Handle preflight OPTIONS requests sent by browsers
-        if req.method == "OPTIONS"
-            return HTTP.Response(200, [
-                "Access-Control-Allow-Origin" => "*",
-                "Access-Control-Allow-Headers" => "*",
-                "Access-Control-Allow-Methods" => "POST, GET, OPTIONS"
-            ])
+        # Protection anti-DNS Rebinding: always validate the Host header
+        host_hdr = lowercase(HTTP.header(req, "Host", ""))
+        if !(host_hdr in ALLOWED_HOSTS)
+            return HTTP.Response(403, ["Content-Type" => "application/json"],
+                JSON3.write(Dict("status" => "error", "message" => "Forbidden Host header.")))
         end
 
-        # Process the actual request
-        response = handler(req)
+        origin = HTTP.header(req, "Origin", "")
 
-        # Attach CORS headers to the final response
-        HTTP.setheader(response, "Access-Control-Allow-Origin" => "*")
+        # Blocks every request Cross-Origin from external websites
+        if !isempty(origin) && !(origin in ALLOWED_ORIGINS)
+            return HTTP.Response(403, ["Content-Type" => "application/json"],
+                JSON3.write(Dict("status" => "error", "message" => "Cross-origin request forbidden.")))
+        end
+
+        # For POST requests (mutate), requires that Content-Type is application/json
+        # (Forces the browser to do the preflight CORS)
+        if req.method == "POST"
+            ct = lowercase(HTTP.header(req, "Content-Type", ""))
+            if !startswith(ct, "application/json")
+                return HTTP.Response(415, ["Content-Type" => "application/json"],
+                    JSON3.write(Dict("status" => "error", "message" => "Content-Type must be application/json.")))
+            end
+        end
+
+        if req.method == "OPTIONS"
+            resp_headers = [
+                "Access-Control-Allow-Methods" => "POST, GET, OPTIONS",
+                "Access-Control-Allow-Headers" => "Content-Type",
+                "Vary" => "Origin"
+            ]
+            if origin in ALLOWED_ORIGINS
+                push!(resp_headers, "Access-Control-Allow-Origin" => origin)
+            end
+            return HTTP.Response(204, resp_headers)
+        end
+
+        response = handler(req)
+        if origin in ALLOWED_ORIGINS
+            HTTP.setheader(response, "Access-Control-Allow-Origin" => origin)
+            HTTP.setheader(response, "Vary" => "Origin")
+        end
+        HTTP.setheader(response, "X-Content-Type-Options" => "nosniff")
+        HTTP.setheader(response, "X-Frame-Options" => "DENY")
         return response
     end
 end
@@ -98,6 +144,28 @@ function build_configs(payload)
     # Construct EvalConfig (using dictionary unpacking)
     eval_config = EvalConfig(; Dict(Symbol(k) => v for (k, v) in pairs(payload["eval_config"]))...)
 
+    # ANTI-DoS checks (Bounds checking)
+    (0.0 <= fem_config.beta_start <= 10.0 && 0.0 <= fem_config.beta_end <= 10.0) ||
+        error("beta bounds out of range [0, 10].")
+    fem_config.beta_step > 0.0 || error("beta_step must be positive.")
+
+    num_betas = floor(Int, (fem_config.beta_end - fem_config.beta_start) / fem_config.beta_step) + 1
+    (1 <= num_betas <= 200) ||
+        error("Parameter space (beta) exceeds maximum allowed snapshots (max 200, requested $num_betas).")
+
+    (1 <= fem_config.order <= 5) || error("FEM order must be between 1 and 5.")
+    (10 <= fem_config.nx <= 10_000) || error("nx must be between 10 and 10,000.")
+    (0.0 < fem_config.L <= 100.0) || error("L must be in (0, 100].")
+
+    (fem_config.dt > 0.0 && fem_config.tf > fem_config.t0) || error("Invalid time domain parameters.")
+    num_tsteps = floor(Int, (fem_config.tf - fem_config.t0) / fem_config.dt)
+    (1 <= num_tsteps <= 5_000) ||
+        error("Temporal grid exceeds maximum allowed steps (max 5,000, requested $num_tsteps).")
+
+    solver_data = payload["solver"]
+    epochs = Int(solver_data["epochs"])
+    (1 <= epochs <= 100_000) || error("epochs must be between 1 and 100,000.")
+
     # Construct LR Scheduler
     sched_data = payload["scheduler"]
     local scheduler::AbstractLRScheduler
@@ -106,7 +174,7 @@ function build_configs(payload)
         scheduler = CosineAnnealing(
             lr_max=Float32(sched_data["ca_lr_max"]),
             lr_min=Float32(sched_data["ca_lr_min"]),
-            max_epochs=Int(payload["solver"]["epochs"])
+            max_epochs=Int(epochs)
         )
     elseif sched_data["type"] == "ReduceLROnPlateau"
         scheduler = ReduceLROnPlateau(
@@ -120,11 +188,11 @@ function build_configs(payload)
     end
 
     # Construct Neural Solver
-    solver_data = payload["solver"]
     local solver::AbstractNeuralSolver
 
     batch_size = Int(solver_data["batch_size"])
-    pm_hash = String(solver_data["pretrained_model_hash"])
+    raw_pm_hash = String(get(solver_data, "pretrained_model_hash", ""))
+    pm_hash = isempty(raw_pm_hash) ? "" : validate_hash(raw_pm_hash)
 
     if solver_data["type"] == "DeepONet"
         solver = DeepONetSolver(
@@ -171,6 +239,107 @@ function build_configs(payload)
     return fem_config, solver, eval_config
 end
 
+# Path validation and filesystem helpers are kept in a small, independently tested module.
+validate_hash(value) = RegistryArtifacts.validate_hash(value)
+validate_solver_dir(value) = RegistryArtifacts.validate_solver_dir(value)
+safe_joinpath(base_dir::AbstractString, parts::AbstractString...) =
+    RegistryArtifacts.safe_joinpath(base_dir, parts...)
+
+# Safe helper to download only from the official Firebase bucket of the project
+const ALLOWED_FIREBASE_BUCKET = "gridap-gsoc2026.firebasestorage.app"
+const MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024 # Safe limit: 500 MB
+const CLOUD_PROXY_URL = "https://us-central1-gridap-gsoc2026.cloudfunctions.net/getEvaluationArtifact"
+
+function safe_firebase_download(remote_object_path::String, local_dest::String)
+    # Parse and validate the object name. The destination is always derived from
+    # canonical hashes elsewhere; the caller cannot supply an arbitrary Storage URL.
+    parts = split(remote_object_path, "/")
+    length(parts) == 2 || error("Invalid remote object path format: $remote_object_path")
+    category, filename = parts
+    category in ("data", "models", "plots") || error("Unsupported Firebase artifact category: $category")
+    expected_extension = category == "plots" ? ".json" : ".jld2"
+    endswith(filename, expected_extension) || error("Invalid file extension for Firebase artifact category: $category")
+    hash_val = validate_hash(first(split(filename, ".")))
+
+    function persist_downloaded_bytes(bytes::AbstractVector{UInt8})
+        body = category == "plots" ?
+               RegistryArtifacts.decode_evaluation_json_bytes(bytes) : Vector{UInt8}(bytes)
+        length(body) <= MAX_DOWNLOAD_BYTES || error("Downloaded artifact exceeds maximum allowed size.")
+        mkpath(dirname(local_dest))
+        write(local_dest, body)
+        return nothing
+    end
+
+    # Priority 1: Service Account direct access. If IAM denies the request, fall
+    # through to the Cloud Function rather than failing a clone with valid public data.
+    if HAS_FIREBASE_ACCESS
+        token = FirebaseREST.get_access_token()
+        if !isnothing(token)
+            encoded_path = HTTP.URIs.escapeuri(remote_object_path)
+            direct_url = "https://storage.googleapis.com/storage/v1/b/$(ALLOWED_FIREBASE_BUCKET)/o/$(encoded_path)?alt=media"
+            direct_response = try
+                HTTP.get(
+                    direct_url,
+                    ["Authorization" => "Bearer $token"];
+                    status_exception=false,
+                    readtimeout=120,
+                )
+            catch error
+                @warn "Direct Firebase Storage request failed; trying the read-only Cloud Function proxy." object=remote_object_path exception=(error, catch_backtrace())
+                nothing
+            end
+            if !isnothing(direct_response) && direct_response.status == 200
+                @info "Downloaded Firebase artifact directly using service-account credentials: $remote_object_path"
+                persist_downloaded_bytes(direct_response.body)
+                return nothing
+            elseif !isnothing(direct_response)
+                @warn "Direct Firebase Storage access failed; trying the read-only Cloud Function proxy." object=remote_object_path status=direct_response.status
+            end
+        end
+    end
+
+    # Priority 2: Public clone mode. The proxy verifies that the hash is referenced
+    # by a published Firestore document before returning a plot or signed URL.
+    @info "Requesting short-lived artifact access from Cloud Proxy for [$remote_object_path]..."
+    proxy_endpoint = "$(CLOUD_PROXY_URL)?category=$(category)&hash=$(hash_val)"
+    proxy_response = HTTP.get(proxy_endpoint; status_exception=false, readtimeout=30)
+    if proxy_response.status != 200
+        detail = try
+            JSON3.read(proxy_response.body)["message"]
+        catch
+            "HTTP $(proxy_response.status)"
+        end
+        error("Cloud Proxy refused download request for $remote_object_path ($detail)")
+    end
+
+    if category == "plots"
+        persist_downloaded_bytes(proxy_response.body)
+        return nothing
+    end
+
+    proxy_data = JSON3.read(proxy_response.body)
+    signed_url = String(proxy_data["signed_url"])
+    @info "Downloading binary artifact to $local_dest..."
+    response = HTTP.get(signed_url; redirect=false, status_exception=false, readtimeout=120)
+    response.status == 200 || error("Signed Storage download failed with HTTP $(response.status) for $remote_object_path")
+    persist_downloaded_bytes(response.body)
+    return nothing
+end
+
+# Updates the timestamp version of the catalog on Firestore
+function bump_catalog_metadata!(token::String)
+    timestamp_ms = round(Int64, datetime2unix(now(UTC)) * 1000)
+    payload = Dict("updated_at" => timestamp_ms)
+
+    success = FirebaseREST.push_to_firestore(token, "catalog_metadata", "state", payload)
+    if success
+        @info "Catalog metadata version bumped ($timestamp_ms)"
+    else
+        @warn "Failed to bump catalog metadata version."
+    end
+    return success
+end
+
 # Endpoint to verify the server is compiled and ready
 @get "/api/ping" function (req::HTTP.Request)
     return JSON3.write(Dict("status" => "ok", "message" => "Julia Backend Ready"))
@@ -194,6 +363,13 @@ end
 
 # Endpoint WebSocket
 @websocket "/ws/simulate" function (ws::HTTP.WebSocket)
+    host_hdr = lowercase(HTTP.header(ws.request, "Host", ""))
+    origin_hdr = HTTP.header(ws.request, "Origin", "")
+    if !(host_hdr in ALLOWED_HOSTS) || (!isempty(origin_hdr) && !(origin_hdr in ALLOWED_ORIGINS))
+        close(ws)
+        return
+    end
+
     local sender_task = nothing
     local session_channel = nothing
 
@@ -309,6 +485,19 @@ end
                 @info "Successfully reconnected WebSocket for active session: $session_id"
 
             elseif action == "start"
+                # Blocks concurrent requests
+                already_running = lock(STATE_LOCK) do
+                    !isempty(ACTIVE_TASKS)
+                end
+
+                if already_running
+                    HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                        "type" => "error",
+                        "message" => "Another simulation is currently running. Please wait for completion."
+                    )))
+                    continue
+                end
+
                 session_id = string(uuid4())
                 @info "New simulation started. Session ID: $session_id"
 
@@ -388,13 +577,13 @@ end
                                 json_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).json")
                                 isfile(json_path) || error("Evaluation JSON not found after generation: $json_path")
                                 eval_data = JSON3.read(read(json_path, String), Dict{String,Any})
-                                log_cb(Dict(
+                                HTTP.WebSockets.isclosed(ws) || put!(session_channel, JSON3.write(Dict(
                                     "type" => "success",
                                     "data_hash" => data_hash,
                                     "model_hash" => model_hash,
                                     "eval_hash" => eval_hash,
                                     "eval_data" => eval_data
-                                ))
+                                )))
                             catch e
                                 if e isa InterruptException ||
                                     (e isa TaskFailedException &&
@@ -419,6 +608,7 @@ end
                                 lock(STATE_LOCK) do
                                     delete!(ACTIVE_TASKS, session_id)
                                     delete!(SESSION_CANCEL_FLAGS, session_id)
+                                    delete!(SESSION_HISTORY, session_id)
                                     if haskey(SESSION_CHANNELS, session_id)
                                         close(SESSION_CHANNELS[session_id])
                                         delete!(SESSION_CHANNELS, session_id)
@@ -543,11 +733,18 @@ end
     end
 end
 
-# Endpoint to fetch the entire cache registry
+# Endpoint to fetch the entire cache registry. `_isLocal` describes physical files,
+# not merely entries present in registry.json.
 @get "/api/registry" function (req::HTTP.Request)
     try
         registry = HashRegistry.load_registry()
-        return JSON3.write(Dict("status" => "success", "data" => registry))
+        registry_with_presence = RegistryArtifacts.with_local_presence(
+            registry;
+            data_dir=datadir("sims"),
+            models_dir=datadir("models"),
+            plots_dir=plotsdir(),
+        )
+        return JSON3.write(Dict("status" => "success", "data" => registry_with_presence))
     catch e
         @error "Failed to load registry" exception=(e, catch_backtrace())
         return HTTP.Response(
@@ -559,37 +756,83 @@ end
 end
 
 # Endpoint to fetch a specific interactive evaluation JSON artifact.
+# Resolve the solver directory from the local dependency graph first; the frontend hint
+# is only a fallback for older/incomplete registry entries.
 @post "/api/get_evaluation_plot" function (req::HTTP.Request)
-    try
-        payload = JSON3.read(req.body)
-        eval_hash = String(payload["eval_hash"])
-        solver_type = lowercase(String(payload["solver_type"]))
-
-        @info "Serving evaluation JSON for $solver_type (Hash: $eval_hash)"
-        json_path = plotsdir(solver_type, "eval_$(eval_hash).json")
-
-        if isfile(json_path)
-            raw_json = read(json_path, String)
-            return HTTP.Response(
-                200,
-                ["Content-Type" => "application/json"],
-                """{"status":"success","eval_data":$raw_json}"""
-            )
-        else
-            return HTTP.Response(
-                404,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict("status" => "error", "message" => "Evaluation JSON not found on disk."))
-            )
-        end
+    payload = try
+        JSON3.read(req.body, Dict{String,Any})
     catch e
-        @error "Failed to retrieve evaluation data" exception=(e, catch_backtrace())
         return HTTP.Response(
             400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => sprint(showerror, e)))
+            JSON3.write(Dict("status" => "error", "message" => "Invalid JSON request body: $(sprint(showerror, e))")),
         )
     end
+
+    eval_hash = try
+        validate_hash(get(payload, "eval_hash", nothing))
+    catch e
+        return HTTP.Response(
+            400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => sprint(showerror, e))),
+        )
+    end
+
+    solver_hint = get(payload, "solver_type", nothing)
+    registry = try
+        HashRegistry.load_registry()
+    catch e
+        @error "Failed to load registry while retrieving evaluation" exception=(e, catch_backtrace())
+        return HTTP.Response(
+            500,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Could not load the local registry.")),
+        )
+    end
+
+    result = try
+        RegistryArtifacts.read_evaluation_json(
+            eval_hash,
+            registry,
+            plotsdir();
+            solver_hint=solver_hint,
+        )
+    catch e
+        @error "Invalid evaluation lookup request" eval_hash exception=(e, catch_backtrace())
+        return HTTP.Response(
+            400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => sprint(showerror, e))),
+        )
+    end
+
+    if result.status == :not_found
+        @warn "Evaluation JSON not found" eval_hash searched_paths=result.searched_paths
+        return HTTP.Response(
+            404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(
+                "status" => "error",
+                "message" => result.message,
+                "searched_paths" => result.searched_paths,
+            )),
+        )
+    elseif result.status == :invalid_json
+        @error "Evaluation JSON is invalid" eval_hash path=result.path message=result.message
+        return HTTP.Response(
+            500,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => result.message)),
+        )
+    end
+
+    @info "Serving evaluation JSON" eval_hash path=result.path
+    return HTTP.Response(
+        200,
+        ["Content-Type" => "application/json"],
+        JSON3.write(Dict("status" => "success", "eval_data" => result.data)),
+    )
 end
 
 @post "/api/share" function (req::HTTP.Request)
@@ -614,7 +857,7 @@ end
         )
     end
 
-    eval_hash = get(payload, "eval_hash", nothing)
+    eval_hash = validate_hash(get(payload, "eval_hash", ""))
     @info "User triggered Firebase sharing for experiment: $eval_hash"
 
     if isnothing(eval_hash) || isempty(eval_hash)
@@ -639,20 +882,24 @@ end
 
     # Reconstruct the full computational graph from the registry
     eval_data = registry["evaluations"][eval_hash]
-    model_hash = eval_data["model_hash"]
+    model_hash = validate_hash(eval_data["model_hash"])
     model_data = registry["models"][model_hash]
-    data_hash = model_data["data_hash"]
+    data_hash = validate_hash(model_data["data_hash"])
     data_config = registry["data"][data_hash]
 
-    solver_type_raw = model_data["solver_type"]
-    solver_type = lowercase(solver_type_raw)
+    solver_type = validate_solver_dir(model_data["solver_type"])
 
-    # Only interactive JSON evaluations can be shared.
-    eval_file_path = plotsdir(solver_type, "eval_$(eval_hash).json")
-    data_path = datadir("sims", "data_$(data_hash).jld2")
-    model_path = datadir("models", solver_type, "model_$(model_hash).jld2")
+    # Only interactive JSON evaluations can be shared. Resolve current and legacy
+    # solver folder names so older artifacts remain publishable.
+    eval_file_path = RegistryArtifacts.find_existing_solver_artifact(
+        plotsdir(), solver_type, "eval_$(eval_hash).json",
+    )
+    data_path = safe_joinpath(datadir("sims"), "data_$(data_hash).jld2")
+    model_path = RegistryArtifacts.find_existing_solver_artifact(
+        datadir("models"), solver_type, "model_$(model_hash).jld2",
+    )
 
-    if !isfile(eval_file_path) || !isfile(data_path) || !isfile(model_path)
+    if isnothing(eval_file_path) || !isfile(data_path) || isnothing(model_path)
         return HTTP.Response(404, ["Content-Type" => "application/json"],
             JSON3.write(Dict(
                 "status" => "error",
@@ -686,20 +933,27 @@ end
         ))
     end
 
+    uploaded_objects = String[]
+    rollback_uploads!() = foreach(path -> FirebaseREST.delete_from_storage(token, path), uploaded_objects)
+
     @info "Uploading evaluation JSON artifact..."
     artifact_url = FirebaseREST.upload_to_storage(token, eval_file_path, "plots/$(eval_hash).json"; content_type="application/json")
+    isnothing(artifact_url) || push!(uploaded_objects, "plots/$(eval_hash).json")
 
     @info "Uploading high-fidelity FEM data..."
     data_url = FirebaseREST.upload_to_storage(token, data_path, "data/$(data_hash).jld2")
+    isnothing(data_url) || push!(uploaded_objects, "data/$(data_hash).jld2")
 
     @info "Uploading Neural Operator weights..."
     model_url = FirebaseREST.upload_to_storage(token, model_path, "models/$(model_hash).jld2")
+    isnothing(model_url) || push!(uploaded_objects, "models/$(model_hash).jld2")
 
     if isnothing(artifact_url) || isnothing(data_url) || isnothing(model_url)
+        rollback_uploads!()
         return HTTP.Response(500, ["Content-Type" => "application/json"],
             JSON3.write(Dict(
                 "status" => "error",
-                "message" => "Failed to upload one or more files to Cloud Storage."
+                "message" => "Failed to upload one or more files to Cloud Storage; partial uploads were rolled back where possible."
             )))
     end
 
@@ -725,6 +979,9 @@ end
     success = FirebaseREST.push_to_firestore(token, "shared_experiments", eval_hash, doc_payload)
 
     if success
+        # Invalidate the cache of the Cloud Functions updating the timestamp in metadata document
+        bump_catalog_metadata!(token)
+
         @info "Publishing completed successfully for $eval_hash."
         return JSON3.write(Dict(
             "status" => "success",
@@ -733,165 +990,169 @@ end
             "already_exists" => false
         ))
     else
+        rollback_uploads!()
         return HTTP.Response(
             500,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => "Failed to push structured metadata to Firestore."))
+            JSON3.write(Dict("status" => "error", "message" => "Failed to push structured metadata to Firestore; uploaded artifacts were rolled back where possible."))
         )
     end
 end
 
-# Sync simulation endpoint: Smart hierarchical download to local DrWatson workspace
+# Sync simulation endpoint: download required artifacts and commit metadata only after
+# every requested file is present and non-empty. No service-account file is required:
+# safe_firebase_download falls back to the read-only Cloud Function proxy.
 @post "/api/sync_experiment" function (req::HTTP.Request)
-    # Parse Payload
-    local payload::Dict{String,Any}
-    try
-        payload = JSON3.read(req.body, Dict{String,Any})
+    payload = try
+        JSON3.read(req.body, Dict{String,Any})
     catch e
         return HTTP.Response(400, ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => "Invalid JSON payload.")))
+            JSON3.write(Dict("status" => "error", "message" => "Invalid JSON payload: $(sprint(showerror, e))")))
     end
 
-    # Extract hashes safely (allowing partial syncs)
     hashes = get(payload, "hashes", Dict{String,Any}())
-    data_hash = get(hashes, "data_hash", nothing)
-    model_hash = get(hashes, "model_hash", nothing)
+    hashes isa AbstractDict || return HTTP.Response(400, ["Content-Type" => "application/json"],
+        JSON3.write(Dict("status" => "error", "message" => "'hashes' must be a JSON object.")))
 
-    eval_hash = get(payload, "eval_hash", nothing)
+    data_hash, model_hash, eval_hash = try
+        raw_data = get(hashes, "data_hash", nothing)
+        raw_model = get(hashes, "model_hash", nothing)
+        raw_eval = get(payload, "eval_hash", nothing)
+        (
+            isnothing(raw_data) ? nothing : validate_hash(raw_data),
+            isnothing(raw_model) ? nothing : validate_hash(raw_model),
+            isnothing(raw_eval) ? nothing : validate_hash(raw_eval),
+        )
+    catch e
+        return HTTP.Response(400, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => sprint(showerror, e))))
+    end
 
     if isnothing(data_hash) && isnothing(model_hash) && isnothing(eval_hash)
         return HTTP.Response(400, ["Content-Type" => "application/json"],
             JSON3.write(Dict("status" => "error", "message" => "No hashes provided. Nothing to sync.")))
     end
 
-    @info "Starting hierarchical sync into local workspace..."
-
-    # Internal helper to clean up database and frontend metadata
-    function clean_config(d::Dict)
-        forbidden_keys = ["_isShared", "_isLocal", "model_url", "data_url", "eval_url", "data_hash", "model_hash", "eval_hash", "solver_type", "model_type", "download_url"]
-        return Dict{String,Any}(string(k) => v for (k, v) in pairs(d) if !(string(k) in forbidden_keys))
+    registry = try
+        HashRegistry.load_registry()
+    catch e
+        @error "Could not load local registry before sync" exception=(e, catch_backtrace())
+        return HTTP.Response(500, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Could not load local registry.")))
     end
 
-    registry = HashRegistry.load_registry()
-    sync_success = true
-    model_type_raw = get(payload, "model_type", "")
-    solver_type = lowercase(model_type_raw)
-
-
-    # SYNC FEM DATA
-    if !isnothing(data_hash) && haskey(payload, "fem_config")
-        data_dest = datadir("sims", "data_$(data_hash).jld2")
-        data_url = get(payload, "data_url", "")
-
-        if !isfile(data_dest) && !isempty(data_url)
-            mkpath(dirname(data_dest))
-            @info "Downloading FEM data [$(data_hash)]..."
-            try
-                HTTP.download(data_url, data_dest)
-            catch e
-                @error "Failed to download FEM Data" exception=(e, catch_backtrace())
-                sync_success = false
-            end
-        else
-            @info "FEM data [$(data_hash)] already exists or URL missing. Skipping download."
-        end
-
-        if sync_success && !haskey(registry["data"], data_hash)
-            registry["data"][data_hash] = clean_config(payload["fem_config"])
-        end
+    # Keep UI/cloud-only fields out of the persistent local registry.
+    function clean_config(value)
+        value isa AbstractDict || throw(ArgumentError("Configuration metadata must be a JSON object."))
+        forbidden = Set((
+            "_isShared", "_isLocal", "model_url", "data_url", "eval_url",
+            "data_hash", "model_hash", "eval_hash", "solver_type", "model_type", "download_url",
+        ))
+        return Dict{String,Any}(
+            string(key) => item for (key, item) in pairs(value)
+                                    if !(string(key) in forbidden)
+        )
     end
 
+    try
+        model_type_raw = String(get(payload, "model_type", ""))
+        solver_dir = isempty(strip(model_type_raw)) ? "" : validate_solver_dir(model_type_raw)
 
-    # SYNC NEURAL MODEL WEIGHTS
-    if sync_success && !isnothing(model_hash) && haskey(payload, "solver_config")
-        if isempty(solver_type)
-            @warn "Model type missing. Cannot sync weights."
-        else
-            model_dest = datadir("models", solver_type, "model_$(model_hash).jld2")
-            model_url = get(payload, "model_url", "")
-
-            if !isfile(model_dest) && !isempty(model_url)
-                mkpath(dirname(model_dest))
-                @info "Downloading Model weights [$(model_hash)]..."
-                try
-                    HTTP.download(model_url, model_dest)
-                catch e
-                    @error "Failed to download Model weights" exception=(e, catch_backtrace())
-                    sync_success = false
+        # Resolve missing dependency hashes from the local registry when a caller
+        # requests only a model/evaluation node.
+        if isnothing(model_hash) && !isnothing(eval_hash)
+            eval_entry = get(registry["evaluations"], eval_hash, nothing)
+            eval_entry isa AbstractDict || error("Evaluation [$eval_hash] is not registered locally; sync it from a shared registry payload.")
+            model_hash = validate_hash(get(eval_entry, "model_hash", nothing))
+        end
+        if isnothing(data_hash) && !isnothing(model_hash)
+            model_entry = get(registry["models"], model_hash, nothing)
+            if model_entry isa AbstractDict
+                raw_parent_data = get(model_entry, "data_hash", nothing)
+                if !isnothing(raw_parent_data) && !isempty(String(raw_parent_data))
+                    data_hash = validate_hash(raw_parent_data)
                 end
-            else
-                @info "Model weights [$(model_hash)] already exist or URL missing. Skipping download."
-            end
-
-            # Note: We link the model to the data_hash it was trained on
-            if sync_success && !haskey(registry["models"], model_hash)
-
-                cleaned_solver = clean_config(payload["solver_config"])
-
-                registry["models"][model_hash] = Dict(
-                    "solver_type" => model_type_raw,
-                    "solver" => cleaned_solver,
-                    "data_hash" => isnothing(data_hash) ? "" : data_hash
-                )
             end
         end
-    end
 
-    # Sync the interactive zero-shot evaluation JSON.
-    if sync_success && !isnothing(eval_hash) && haskey(payload, "eval_config")
-        isempty(solver_type) && error("Model type missing. Cannot sync evaluation JSON.")
-        eval_url = String(payload["eval_url"])
-        isempty(eval_url) && error("Evaluation JSON URL missing from sync payload.")
-
-        json_path = plotsdir(solver_type, "eval_$(eval_hash).json")
-        if !isfile(json_path)
-            mkpath(dirname(json_path))
-            @info "Downloading evaluation JSON [$(eval_hash)]..."
-            try
-                resp = HTTP.get(eval_url)
-                write(json_path, resp.body)
-            catch e
-                @error "Failed to download evaluation JSON" exception=(e, catch_backtrace())
-                sync_success = false
-            end
-        else
-            @info "Evaluation JSON [$(eval_hash)] already exists. Skipping download."
+        # Dataset: download by its canonical object name, not by a client-provided URL.
+        if !isnothing(data_hash)
+            data_config = get(payload, "fem_config", get(registry["data"], data_hash, nothing))
+            data_config isa AbstractDict || error("FEM configuration metadata is missing for dataset [$data_hash].")
+            data_dest = safe_joinpath(datadir("sims"), "data_$(data_hash).jld2")
+            RegistryArtifacts.ensure_artifact!(data_dest, path ->
+                safe_firebase_download("data/$(data_hash).jld2", path)
+            )
+            registry["data"][data_hash] = clean_config(data_config)
         end
 
-        if sync_success && !haskey(registry["evaluations"], eval_hash)
-            registry["evaluations"][eval_hash] = Dict(
-                "model_hash" => model_hash,
-                "eval_config" => clean_config(payload["eval_config"]),
-                "benchmark_version" => payload["benchmark_version"],
+        # Model weights: require metadata and a known solver directory.
+        if !isnothing(model_hash)
+            if isempty(solver_dir)
+                model_entry = get(registry["models"], model_hash, nothing)
+                if model_entry isa AbstractDict
+                    model_type_raw = String(get(model_entry, "solver_type", ""))
+                    solver_dir = validate_solver_dir(model_type_raw)
+                end
+            end
+            isempty(solver_dir) && error("Model type is missing; cannot determine the model directory.")
+
+            solver_config = get(payload, "solver_config", get(get(registry["models"], model_hash, Dict{String,Any}()), "solver", nothing))
+            solver_config isa AbstractDict || error("Solver configuration metadata is missing for model [$model_hash].")
+            model_dest = safe_joinpath(datadir("models"), solver_dir, "model_$(model_hash).jld2")
+            RegistryArtifacts.ensure_artifact!(model_dest, path ->
+                safe_firebase_download("models/$(model_hash).jld2", path)
+            )
+
+            parent_data_hash = isnothing(data_hash) ? "" : data_hash
+            registry["models"][model_hash] = Dict(
+                "solver_type" => model_type_raw,
+                "solver" => clean_config(solver_config),
+                "data_hash" => parent_data_hash,
             )
         end
-    end
 
-    # FINAL REGISTRY UPDATE
-    if sync_success
-        try
-            HashRegistry.save_registry(registry)
-            @info "Registry successfully updated for synced entities."
-            return JSON3.write(Dict(
-                "status" => "success",
-                "message" => "Hierarchy synced successfully to local workspace."
-            ))
-        catch e
-            @error "Failed to save registry.json" exception=(e, catch_backtrace())
-            return HTTP.Response(500, ["Content-Type" => "application/json"],
-                JSON3.write(Dict("status" => "error", "message" => "Downloads succeeded, but registry save failed.")))
+        # Evaluation JSON: the proxy is addressed by its hash, so eval_url is metadata,
+        # not a prerequisite for syncing. This also works without firebase-auth.json.
+        if !isnothing(eval_hash)
+            isempty(solver_dir) && error("Model type is missing; cannot determine the evaluation directory.")
+            isnothing(model_hash) && error("Model hash is missing for evaluation [$eval_hash].")
+            eval_config = get(payload, "eval_config", get(get(registry["evaluations"], eval_hash, Dict{String,Any}()), "eval_config", nothing))
+            eval_config isa AbstractDict || error("Evaluation configuration metadata is missing for evaluation [$eval_hash].")
+
+            eval_dest = safe_joinpath(plotsdir(), solver_dir, "eval_$(eval_hash).json")
+            RegistryArtifacts.ensure_artifact!(
+                eval_dest,
+                path -> safe_firebase_download("plots/$(eval_hash).json", path);
+                validator=RegistryArtifacts.is_valid_evaluation_json,
+            )
+
+            benchmark_version = get(payload, "benchmark_version", get(get(registry["evaluations"], eval_hash, Dict{String,Any}()), "benchmark_version", nothing))
+            isnothing(benchmark_version) && error("Evaluation benchmark_version metadata is missing.")
+            registry["evaluations"][eval_hash] = Dict(
+                "model_hash" => model_hash,
+                "eval_config" => clean_config(eval_config),
+                "benchmark_version" => benchmark_version,
+            )
         end
-    else
-        return HTTP.Response(500, ["Content-Type" => "application/json"],
-            JSON3.write(Dict("status" => "error", "message" => "Network error during one or more file downloads.")))
+
+        HashRegistry.save_registry(registry)
+        @info "Registry successfully updated after artifact verification." data_hash model_hash eval_hash
+        return JSON3.write(Dict(
+            "status" => "success",
+            "message" => "Requested artifacts verified and synced to the local workspace.",
+        ))
+    catch e
+        @error "Experiment sync failed; registry was not committed" exception=(e, catch_backtrace())
+        return HTTP.Response(502, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => sprint(showerror, e))))
     end
 end
-
 
 # Delete endpoint (Local & Cloud)
 @post "/api/delete_local" function (req::HTTP.Request)
     payload = JSON3.read(req.body, Dict{String,Any})
-    target_hash = payload["hash"]
+    target_hash = validate_hash(payload["hash"])
     target_type = payload["type"] # "evaluation", "model", or "data"
 
     registry = HashRegistry.load_registry()
@@ -930,24 +1191,30 @@ end
 
     # Delete Evaluations
     for e_h in evals_to_delete
-        m_h = registry["evaluations"][e_h]["model_hash"]
-        solver_type = lowercase(registry["models"][m_h]["solver_type"])
-        json_path = plotsdir(solver_type, "eval_$(e_h).json")
-        isfile(json_path) && rm(json_path)
+        haskey(registry["evaluations"], e_h) || continue
+        m_h = validate_hash(registry["evaluations"][e_h]["model_hash"])
+        solver_type = validate_solver_dir(registry["models"][m_h]["solver_type"])
+        for solver_dir in RegistryArtifacts.solver_dir_candidates(solver_type)
+            json_path = safe_joinpath(plotsdir(), solver_dir, "eval_$(validate_hash(e_h)).json")
+            isfile(json_path) && rm(json_path)
+        end
         delete!(registry["evaluations"], e_h)
     end
 
     # Delete Models (Weights)
     for m_h in models_to_delete
-        solver_type = lowercase(registry["models"][m_h]["solver_type"])
-        model_path = datadir("models", solver_type, "model_$(m_h).jld2")
-        isfile(model_path) && rm(model_path)
+        haskey(registry["models"], m_h) || continue
+        solver_type = validate_solver_dir(registry["models"][m_h]["solver_type"])
+        for solver_dir in RegistryArtifacts.solver_dir_candidates(solver_type)
+            model_path = safe_joinpath(datadir("models"), solver_dir, "model_$(validate_hash(m_h)).jld2")
+            isfile(model_path) && rm(model_path)
+        end
         delete!(registry["models"], m_h)
     end
 
     # Delete Data (FEM Snapshots)
     for d_h in data_to_delete
-        data_path = datadir("sims", "data_$(d_h).jld2")
+        data_path = safe_joinpath(datadir("sims"), "data_$(validate_hash(d_h)).jld2")
         isfile(data_path) && rm(data_path)
         delete!(registry["data"], d_h)
     end
@@ -966,60 +1233,98 @@ end
     end
 
     payload = JSON3.read(req.body, Dict{String,Any})
-    eval_hash = get(payload, "eval_hash", nothing)
-    model_hash = get(payload, "model_hash", nothing)
-    data_hash = get(payload, "data_hash", nothing)
-
-    if isnothing(eval_hash)
-        return HTTP.Response(400, JSON3.write(Dict("status" => "error", "message" => "Missing eval_hash.")))
+    raw_eval_hash = get(payload, "eval_hash", nothing)
+    eval_hash = try
+        validate_hash(raw_eval_hash)
+    catch
+        return HTTP.Response(400, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Invalid or missing eval_hash.")))
     end
+
+    token = FirebaseREST.get_access_token()
+    isnothing(token) && return HTTP.Response(500, ["Content-Type" => "application/json"],
+        JSON3.write(Dict("status" => "error", "message" => "Failed to authenticate with Firebase.")))
+
+    cred = Auth.get_firebase_credentials()
+    base_url = "https://firestore.googleapis.com/v1/projects/$(cred["project_id"])/databases/(default)/documents/shared_experiments"
+    doc_url = "$(base_url)/$(HTTP.URIs.escapeuri(eval_hash))"
+
+    # Check that the document existsand read the hash from the Firestore document
+    get_resp = HTTP.get(doc_url, ["Authorization" => "Bearer $token"]; status_exception=false)
+    if get_resp.status != 200
+        return HTTP.Response(404, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Shared experiment not found in Firestore.")))
+    end
+
+    doc_json = JSON3.read(String(get_resp.body))
+    hashes_fields = doc_json[:fields][:hashes][:mapValue][:fields]
+    model_hash = validate_hash(String(hashes_fields[:model_hash][:stringValue]))
+    data_hash = validate_hash(String(hashes_fields[:data_hash][:stringValue]))
 
     @info "Deleting experiment $eval_hash from Cloud Gallery..."
-    token = FirebaseREST.get_access_token()
 
-    if isnothing(token)
-        return HTTP.Response(500, JSON3.write(Dict("status" => "error", "message" => "Failed to authenticate securely with Firebase.")))
-    end
-
-    # Delete the specific Firestore document and its Plot
+    # Delete the Firestore document first. Never remove the plot while a public
+    # document still references it.
     doc_deleted = FirebaseREST.delete_from_firestore(token, "shared_experiments", eval_hash)
-    FirebaseREST.delete_from_storage(token, "plots/$(eval_hash).json")
 
-    if doc_deleted
-        #  Garbage Collection (Reference Checking)
-        # Fetch all remaining documents in the gallery
-        cred = Auth.get_firebase_credentials()
-        url = "https://firestore.googleapis.com/v1/projects/$(cred["project_id"])/databases/(default)/documents/shared_experiments"
-        resp = HTTP.get(url, ["Authorization" => "Bearer $token"]; status_exception=false)
-
-        if resp.status == 200
-            remaining_data = String(resp.body)
-            parsed_page = JSON3.read(remaining_data)
-            # Delete the shared assets only if we are sure that we red all the documents (there is no next page)
-            has_more_pages = haskey(parsed_page, :nextPageToken)
-
-            if !has_more_pages
-                # Check if model_hash is still referenced anywhere in the remaining JSON
-                if !isnothing(model_hash) && !occursin(model_hash, remaining_data)
-                    @info "Model $model_hash is no longer referenced. Removing from Cloud Storage..."
-                    FirebaseREST.delete_from_storage(token, "models/$(model_hash).jld2")
-                end
-
-                # Check if data_hash is still referenced anywhere in the remaining JSON
-                if !isnothing(data_hash) && !occursin(data_hash, remaining_data)
-                    @info "Data $data_hash is no longer referenced. Removing from Cloud Storage..."
-                    FirebaseREST.delete_from_storage(token, "data/$(data_hash).jld2")
-                end
-            else
-                @warn "Firestore collection has multiple pages; skipping automatic storage GC to prevent accidental deletion."
-            end
-        end
-
-        @info "Successfully and cleanly removed $eval_hash from public gallery."
-        return JSON3.write(Dict("status" => "success", "message" => "Experiment and unreferenced files deleted cleanly."))
-    else
-        return HTTP.Response(500, JSON3.write(Dict("status" => "error", "message" => "Failed to delete document from Firestore.")))
+    if !doc_deleted
+        return HTTP.Response(500, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Failed to delete the Firestore document; Storage artifacts were left untouched.")))
     end
+
+    plot_deleted = FirebaseREST.delete_from_storage(token, "plots/$(eval_hash).json")
+    if !plot_deleted
+        return HTTP.Response(500, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "The Firestore entry was removed, but its evaluation JSON remains in Storage.")))
+    end
+
+    # Garbage collection is safe only after reading the complete collection.
+    resp = HTTP.get(base_url, ["Authorization" => "Bearer $token"]; status_exception=false)
+    if resp.status != 200
+        @warn "Shared document was removed, but Storage garbage collection could not inspect the gallery." status=resp.status
+        return HTTP.Response(500, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "The experiment was removed, but shared asset garbage collection could not verify remaining references.")))
+    end
+
+    parsed_page = JSON3.read(String(resp.body))
+    if haskey(parsed_page, :nextPageToken)
+        @warn "Firestore collection has multiple pages; skipping automatic storage GC to prevent accidental deletion."
+        return JSON3.write(Dict("status" => "success", "message" => "Experiment removed. Shared data/model files were retained because the gallery spans multiple pages."))
+    end
+
+    docs = get(parsed_page, :documents, [])
+    referenced_models = Set{String}()
+    referenced_data = Set{String}()
+    for d in docs
+        try
+            hf = d[:fields][:hashes][:mapValue][:fields]
+            push!(referenced_models, String(hf[:model_hash][:stringValue]))
+            push!(referenced_data, String(hf[:data_hash][:stringValue]))
+        catch e
+            @warn "Skipping a malformed shared document during storage GC; referenced assets will be retained." exception=(e, catch_backtrace())
+        end
+    end
+
+    gc_failures = String[]
+    if !(model_hash in referenced_models)
+        FirebaseREST.delete_from_storage(token, "models/$(model_hash).jld2") || push!(gc_failures, "models/$(model_hash).jld2")
+    end
+    if !(data_hash in referenced_data)
+        FirebaseREST.delete_from_storage(token, "data/$(data_hash).jld2") || push!(gc_failures, "data/$(data_hash).jld2")
+    end
+
+    if !isempty(gc_failures)
+        @warn "Experiment removed, but some unreferenced Storage objects could not be deleted." gc_failures
+        return HTTP.Response(500, ["Content-Type" => "application/json"],
+            JSON3.write(Dict("status" => "error", "message" => "Experiment removed, but garbage collection failed for: $(join(gc_failures, ", ")).")))
+    end
+
+    @info "Successfully removed $eval_hash from public gallery and collected unreferenced assets."
+
+    # Invalidate the cache of the Cloud Functions updating the timestamp in metadata document
+    bump_catalog_metadata!(token)
+
+    return JSON3.write(Dict("status" => "success", "message" => "Experiment and unreferenced files deleted successfully."))
 end
 
 # Define the path to the React static build
@@ -1068,7 +1373,7 @@ Base.exit_on_sigint(false)
 serve(
     host="127.0.0.1",
     port=8080,
-    middleware=[cors_middleware],
+    middleware=[security_and_cors_middleware],
     access_log=nothing,
     async=true
 )

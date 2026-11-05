@@ -17,6 +17,7 @@ import {
     Lock,
     Unlock,
 } from "lucide-react";
+import { escapePlotlyHtml } from "../utils/sanitize";
 
 interface Props {
     evalData: InteractiveEvalData;
@@ -103,6 +104,10 @@ export default function InteractiveEvaluationView({
     );
 
     // 1D Synchronized Subplots (u_true vs u_pred on top, |e| on bottom)
+    const safeSolverName = useMemo(
+        () => escapePlotlyHtml(solver_name),
+        [solver_name],
+    );
     const plot1DData = useMemo<Plotly.Data[]>(
         () => [
             {
@@ -121,11 +126,11 @@ export default function InteractiveEvaluationView({
                 y: currentUPred,
                 type: "scattergl",
                 mode: "lines",
-                name: `${solver_name} (Pred)`,
+                name: `${safeSolverName} (Pred)`,
                 line: { color: "#2563eb", width: 3, dash: "dash" },
                 xaxis: "x",
                 yaxis: "y",
-                hovertemplate: `${solver_name}: %{y:.5f}<extra></extra>`,
+                hovertemplate: `${safeSolverName}: %{y:.5f}<extra></extra>`,
             },
             {
                 x: x_grid,
@@ -141,7 +146,7 @@ export default function InteractiveEvaluationView({
                 hovertemplate: "Abs Error: %{y:.5e}<extra></extra>",
             },
         ],
-        [x_grid, currentUTrue, currentUPred, currentAbsErr, solver_name],
+        [x_grid, currentUTrue, currentUPred, currentAbsErr, safeSolverName],
     );
 
     const plot1DLayout = useMemo<Partial<Plotly.Layout>>(

@@ -37,6 +37,13 @@ interface Props {
 
 // Normalize the current serialized Julia scheduler object for display.
 const parseSchedulerConfig = (scheduler: any) => {
+    if (!scheduler || typeof scheduler !== "object") {
+        return {
+            type: "Unknown" as const,
+            scheduler_name: "Custom / Unknown",
+        };
+    }
+
     if (scheduler.type === "CosineAnnealing") {
         return {
             type: "Cosine" as const,
@@ -56,9 +63,11 @@ const parseSchedulerConfig = (scheduler: any) => {
         };
     }
 
-    throw new Error(
-        `Unsupported scheduler type in model registry: ${scheduler.type}`,
-    );
+    // Safe fallback
+    return {
+        type: "Unknown" as const,
+        scheduler_name: String(scheduler.type || "Unknown"),
+    };
 };
 
 const getSequence = (value: unknown): unknown[] | null => {
@@ -117,6 +126,7 @@ export default function ModelNode({
     // Metadata flags
     const isShared = modelObj._isShared;
     const isLocal = modelObj._isLocal;
+    const dependenciesAreLocal = isLocal && femConfig?._isLocal === true;
 
     // Filter evaluations linking to this model
     const linkedEvals = Object.entries(registry.evaluations).filter(
@@ -223,8 +233,8 @@ export default function ModelNode({
 
     // Unified handler for the Fine-Tune / Sync action
     const handleFineTuneAction = async () => {
-        if (isLocal) {
-            // Fast-path: already on disk, trigger directly
+        if (dependenciesAreLocal) {
+            // Fast-path: both model weights and the source FEM dataset are on disk.
             onFineTune(modelHash, solverType, solver, femConfig);
             return;
         }
@@ -280,6 +290,11 @@ export default function ModelNode({
                                     <HardDrive size={12} /> Local
                                 </span>
                             )}
+                            {!isLocal && !isShared && (
+                                <span className="text-[10px] uppercase font-bold tracking-wider bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
+                                    Not on disk
+                                </span>
+                            )}
 
                             <span className="font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-semibold select-all">
                                 {modelHash}
@@ -311,45 +326,55 @@ export default function ModelNode({
                     />
 
                     {/* ACTIONS ROW - Wrap buttons cleanly on narrow screens */}
-                    <div className="flex flex-wrap justify-end items-start gap-2 my-1">
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap justify-end items-stretch sm:items-start gap-2 my-1">
                         {/* Standard Sync Button */}
-                        {isShared && !isLocal && serverIsConnected && (
-                            <SyncWorkspaceButton
-                                isLocal={isLocal}
-                                syncPayload={syncPayload}
-                                buttonLabel="Sync Model Weights"
-                            />
-                        )}
+                        {isShared &&
+                            !dependenciesAreLocal &&
+                            serverIsConnected && (
+                                <SyncWorkspaceButton
+                                    isLocal={dependenciesAreLocal}
+                                    syncPayload={syncPayload}
+                                    buttonLabel="Sync Model Weights"
+                                />
+                            )}
 
                         {/* Fine Tune / Sync Button Container */}
                         {serverIsConnected && (
-                            <div className="flex flex-col items-end gap-1">
+                            <div className="flex flex-col items-stretch sm:items-end gap-1 w-full sm:w-auto">
                                 <button
                                     onClick={handleFineTuneAction}
                                     disabled={isSyncing}
-                                    className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-lg shadow-sm transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-sm transition-all disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
                                     title={
-                                        isLocal
+                                        dependenciesAreLocal
                                             ? "Load this configuration for fine-tuning or cloning"
-                                            : "Sync data to local workspace and load configuration"
+                                            : "Sync required data and weights before fine-tuning"
                                     }
                                 >
                                     {isSyncing ? (
                                         <Loader2
                                             size={16}
-                                            className="animate-spin"
+                                            className="animate-spin shrink-0"
                                         />
-                                    ) : isLocal ? (
-                                        <GitFork size={16} />
+                                    ) : dependenciesAreLocal ? (
+                                        <GitFork
+                                            size={16}
+                                            className="shrink-0"
+                                        />
                                     ) : (
-                                        <DownloadCloud size={16} />
+                                        <DownloadCloud
+                                            size={16}
+                                            className="shrink-0"
+                                        />
                                     )}
 
-                                    {isSyncing
-                                        ? "Syncing Weights..."
-                                        : isLocal
-                                          ? "Fine-Tune Weights"
-                                          : "Sync & Fine-Tune"}
+                                    <span>
+                                        {isSyncing
+                                            ? "Syncing Weights..."
+                                            : dependenciesAreLocal
+                                              ? "Fine-Tune Weights"
+                                              : "Sync & Fine-Tune"}
+                                    </span>
                                 </button>
 
                                 {/* Error Message Display */}
@@ -366,8 +391,7 @@ export default function ModelNode({
                         )}
 
                         {isLocal && (
-                            <div className="pt-0">
-                                {/* Wrapper to align perfectly with the button row */}
+                            <div className="w-full sm:w-auto">
                                 <DeleteButton
                                     targetHash={modelHash}
                                     targetType="model"

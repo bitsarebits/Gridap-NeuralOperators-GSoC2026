@@ -55,8 +55,8 @@ export default function DocsView() {
                     Dashboard Documentation
                 </h1>
                 <p className="text-base sm:text-lg text-slate-600 mb-5 sm:mb-6">
-                    Welcome to the <strong>GridapROMs Orchestrator</strong>.
-                    This interface is designed to configure, run, and evaluate
+                    Welcome to the <strong>NonlinearROMs</strong>. This
+                    interface is designed to configure, run, and evaluate
                     High-Fidelity Finite Element (FE) simulations and Neural
                     Operator training pipelines directly from your browser.
                 </p>

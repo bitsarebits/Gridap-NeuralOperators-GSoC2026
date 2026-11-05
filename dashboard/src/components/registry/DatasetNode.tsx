@@ -134,6 +134,11 @@ export default function DatasetNode({
                                     <HardDrive size={12} /> Local
                                 </span>
                             )}
+                            {!isLocal && !isShared && (
+                                <span className="text-[10px] uppercase font-bold tracking-wider bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
+                                    Not on disk
+                                </span>
+                            )}
                             <span className="font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-semibold select-all">
                                 {dataHash}
                             </span>

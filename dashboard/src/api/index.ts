@@ -12,10 +12,17 @@ import type {
 } from "../types";
 
 const FIREBASE_PROJECT_ID = "gridap-gsoc2026";
-const FIRESTORE_API_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/shared_experiments`;
 
-// Base instance for Axios using relative paths so it works seamlessly
-// on localhost, LAN IP, VS Code Web Tunnels (via Vite proxy), and Oxygen.jl static hosting.
+// Proxies for Firestore catalog and Storage plot artifacts
+const SHARED_REGISTRY_PROXY_URL =
+    import.meta.env.VITE_SHARED_REGISTRY_URL ||
+    `https://us-central1-${FIREBASE_PROJECT_ID}.cloudfunctions.net/getSharedExperiments`;
+
+const ARTIFACT_PROXY_BASE_URL =
+    import.meta.env.VITE_ARTIFACT_PROXY_URL ||
+    `https://us-central1-${FIREBASE_PROJECT_ID}.cloudfunctions.net/getEvaluationArtifact`;
+
+// Base instance for Axios using relative paths
 export const api = axios.create({
     baseURL: "",
     headers: {
@@ -58,11 +65,107 @@ export const fetchEvaluationPlot = async (
     return response.data;
 };
 
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const VALID_HASH_RE = /^[a-f0-9]{12}$/;
+
+/**
+ * Extracts a 12-char hex evaluation hash from either a bare hash or a Firebase storage URL.
+ */
+function extractEvalHash(input: string): string | null {
+    if (VALID_HASH_RE.test(input)) {
+        return input;
+    }
+    const match =
+        input.match(/plots(?:%2f|\/)([a-f0-9]{12})\.json/i) ||
+        input.match(/eval_([a-f0-9]{12})\.json/i);
+    return match ? match[1] : null;
+}
+
+/**
+ * Fetches the zero-shot interactive evaluation JSON via the rate-limited Storage proxy.
+ */
+export const evaluationArtifactUrl = (evalHash: string): string => {
+    const hash = evalHash.trim().toLowerCase();
+    if (!VALID_HASH_RE.test(hash)) {
+        throw new Error("Invalid evaluation hash.");
+    }
+    return `${ARTIFACT_PROXY_BASE_URL}?category=plots&hash=${hash}`;
+};
+
 export const fetchCloudEvaluationJson = async (
-    evalUrl: string,
+    evalUrlOrHash: string,
 ): Promise<InteractiveEvalData> => {
-    const response = await axios.get<InteractiveEvalData>(evalUrl);
+    const hash = extractEvalHash(evalUrlOrHash);
+    const targetUrl = hash ? evaluationArtifactUrl(hash) : evalUrlOrHash;
+
+    const response = await axios.get<InteractiveEvalData>(targetUrl);
     return response.data;
+};
+
+interface EvaluationSource {
+    isLocal: boolean;
+    isShared: boolean;
+    serverIsConnected: boolean;
+    evalUrl?: string;
+}
+
+const requestErrorMessage = (error: unknown): string => {
+    if (error && typeof error === "object") {
+        const candidate = error as {
+            message?: unknown;
+            response?: { data?: { message?: unknown } };
+        };
+        // Prefer the backend's diagnostic over Axios' generic HTTP status text.
+        const responseMessage = candidate.response?.data?.message;
+        if (typeof responseMessage === "string") return responseMessage;
+        if (typeof candidate.message === "string") return candidate.message;
+    }
+    return error instanceof Error ? error.message : "Unknown request error.";
+};
+
+/**
+ * Load an evaluation from the local Julia API when possible. If the entry is also
+ * published, fall back to the Cloud Function when the local copy is absent/stale.
+ */
+export const fetchEvaluationJson = async (
+    evalHash: string,
+    solverType: string,
+    source: EvaluationSource,
+): Promise<InteractiveEvalData> => {
+    let localError: string | null = null;
+
+    if (source.isLocal && source.serverIsConnected) {
+        try {
+            const response = await fetchEvaluationPlot(evalHash, solverType);
+            if (response.status === "success" && response.eval_data) {
+                return response.eval_data;
+            }
+            localError =
+                response.message || "Local evaluation JSON was not returned.";
+        } catch (error) {
+            localError = requestErrorMessage(error);
+        }
+    } else if (source.isLocal) {
+        localError = "The Julia server is not connected.";
+    }
+
+    if (source.isShared) {
+        try {
+            return await fetchCloudEvaluationJson(source.evalUrl || evalHash);
+        } catch (error) {
+            const cloudError = requestErrorMessage(error);
+            throw new Error(
+                localError
+                    ? `Local evaluation unavailable (${localError}); cloud fallback failed (${cloudError}).`
+                    : `Cloud evaluation unavailable (${cloudError}).`,
+            );
+        }
+    }
+
+    throw new Error(
+        localError ||
+            "This evaluation is not available in the local workspace or the shared cloud registry.",
+    );
 };
 
 export const checkShareStatus = async (): Promise<boolean> => {
@@ -91,40 +194,34 @@ export const shareExperiment = async (
     }
 };
 
-// Firestore
-
 /**
- * Parses Firestore's strict typed JSON into a JavaScript object.
+ * Recursively strips prototype-pollution keys from untrusted JSON objects.
  */
-function parseFirestoreValue(val: any): any {
-    if (!val) return null;
-    if (val.stringValue !== undefined) return val.stringValue;
-    if (val.integerValue !== undefined) return parseInt(val.integerValue, 10);
-    if (val.doubleValue !== undefined) return parseFloat(val.doubleValue);
-    if (val.booleanValue !== undefined) return val.booleanValue;
-    if (val.nullValue !== undefined) return null;
-
-    if (val.arrayValue !== undefined) {
-        return (val.arrayValue.values || []).map(parseFirestoreValue);
+function sanitizeObject(val: any): any {
+    if (val === null || typeof val !== "object") {
+        return val;
     }
-    if (val.mapValue !== undefined) {
-        const result: Record<string, any> = {};
-        const fields = val.mapValue.fields || {};
-        for (const key in fields) {
-            result[key] = parseFirestoreValue(fields[key]);
+    if (Array.isArray(val)) {
+        return val.map(sanitizeObject);
+    }
+    const result: Record<string, any> = Object.create(null);
+    for (const key of Object.keys(val)) {
+        if (!DANGEROUS_KEYS.has(key)) {
+            result[key] = sanitizeObject(val[key]);
         }
-        return result;
     }
-    return val;
+    return result;
 }
 
 /**
- * Fetches shared experiments directly from Firestore REST API.
+ * Fetches shared experiments via the rate-limited Firebase Cloud Function proxy.
  */
 export const fetchSharedRegistry = async (): Promise<RegistryData> => {
     try {
-        const response = await axios.get(FIRESTORE_API_URL);
-        const documents = response.data.documents || [];
+        const response = await axios.get(SHARED_REGISTRY_PROXY_URL, {
+            params: { _t: Date.now() },
+        });
+        const documents = response.data?.documents || [];
 
         const sharedRegistry: RegistryData = {
             data: {},
@@ -132,14 +229,22 @@ export const fetchSharedRegistry = async (): Promise<RegistryData> => {
             evaluations: {},
         };
 
-        documents.forEach((doc: any) => {
-            const parsedDoc = parseFirestoreValue({
-                mapValue: { fields: doc.fields },
-            });
+        documents.forEach((rawDoc: any) => {
+            const parsedDoc = sanitizeObject(rawDoc);
+            if (!parsedDoc || !parsedDoc.hashes) return;
 
-            const dataHash = parsedDoc.hashes.data_hash;
-            const modelHash = parsedDoc.hashes.model_hash;
-            const evalHash = parsedDoc.hashes.eval_hash;
+            const dataHash = String(parsedDoc.hashes.data_hash || "");
+            const modelHash = String(parsedDoc.hashes.model_hash || "");
+            const evalHash = String(parsedDoc.hashes.eval_hash || "");
+
+            // Validate 12-character hex hashes before populating registry
+            if (
+                !VALID_HASH_RE.test(dataHash) ||
+                !VALID_HASH_RE.test(modelHash) ||
+                !VALID_HASH_RE.test(evalHash)
+            ) {
+                return;
+            }
 
             // Reconstruct the nested structure
             sharedRegistry.data[dataHash] = {
@@ -166,8 +271,17 @@ export const fetchSharedRegistry = async (): Promise<RegistryData> => {
         });
 
         return sharedRegistry;
-    } catch (error) {
-        console.error("Failed to fetch shared registry from Firestore", error);
+    } catch (error: any) {
+        if (error.response?.status === 429) {
+            console.warn(
+                "Rate limit exceeded while fetching shared registry. Please wait before refreshing.",
+            );
+        } else {
+            console.error(
+                "Failed to fetch shared registry from proxy endpoint",
+                error,
+            );
+        }
         return { data: {}, models: {}, evaluations: {} };
     }
 };

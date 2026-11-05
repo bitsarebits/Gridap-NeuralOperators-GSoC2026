@@ -1,11 +1,12 @@
-name: Deploy Pre-built Dashboard to GitHub Pages
+name: Build and Deploy Dashboard to GitHub Pages
 
 on:
     push:
         branches:
             - main
         paths:
-            - "dashboard/dist/**"
+            - "dashboard/**"
+            - ".github/workflows/deploy_pages.yml"
     workflow_dispatch:
 
 permissions:
@@ -26,6 +27,19 @@ jobs:
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "22"
+                  cache: "npm"
+                  cache-dependency-path: "dashboard/package-lock.json"
+
+            - name: Install dependencies and build
+              working-directory: ./dashboard
+              run: |
+                  npm ci
+                  npm run build
 
             - name: Setup GitHub Pages env
               uses: actions/configure-pages@v4

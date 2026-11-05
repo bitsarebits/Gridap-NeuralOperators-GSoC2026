@@ -113,6 +113,8 @@ export interface ArenaCandidate {
     sigmaTest: number | string;
     evalUrl?: string;
     isLocal: boolean;
+    isShared: boolean;
+    serverIsConnected: boolean;
 }
 
 // Julia Response

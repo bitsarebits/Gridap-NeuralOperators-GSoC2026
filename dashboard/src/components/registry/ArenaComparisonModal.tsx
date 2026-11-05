@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import type { ArenaCandidate, InteractiveEvalData } from "../../types";
-import { fetchCloudEvaluationJson, fetchEvaluationPlot } from "../../api";
+import { fetchEvaluationJson } from "../../api";
 import PlotlyChart from "../ui/PlotlyChart";
 import {
     X,
@@ -12,6 +12,7 @@ import {
     Play,
     Pause,
 } from "lucide-react";
+import { escapePlotlyHtml } from "../../utils/sanitize";
 
 interface Props {
     candidates: ArenaCandidate[];
@@ -61,18 +62,14 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
             setError(null);
             try {
                 const fetched = await Promise.all(
-                    candidates.map(async (c) => {
-                        if (c.isLocal) {
-                            const res = await fetchEvaluationPlot(
-                                c.evalHash,
-                                c.solverType,
-                            );
-                            return res.eval_data ?? null;
-                        } else if (c.evalUrl) {
-                            return await fetchCloudEvaluationJson(c.evalUrl);
-                        }
-                        return null;
-                    }),
+                    candidates.map((candidate) =>
+                        fetchEvaluationJson(candidate.evalHash, candidate.solverType, {
+                            isLocal: candidate.isLocal,
+                            isShared: candidate.isShared,
+                            serverIsConnected: candidate.serverIsConnected,
+                            evalUrl: candidate.evalUrl,
+                        }),
+                    ),
                 );
                 const results = fetched.filter(
                     (item): item is InteractiveEvalData => item !== null,
@@ -195,7 +192,11 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
         loadedEvals.forEach((ev, idx) => {
             const color = MODEL_COLORS[idx % MODEL_COLORS.length];
             const k = findClosestTIdx(ev.t_grid, currentPhysicalTime);
-            const label = `${ev.solver_name} [${ev.eval_hash.slice(0, 6)}]`;
+
+            // Sanitize the strings
+            const safeSolver = escapePlotlyHtml(ev.solver_name);
+            const safeHash = escapePlotlyHtml(ev.eval_hash.slice(0, 6));
+            const label = `${safeSolver} [${safeHash}]`;
 
             const absErr = ev.u_pred[k].map((v, i) =>
                 Math.abs(v - ev.u_true[k][i]),
@@ -277,13 +278,18 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
         points.forEach((point) => {
             const { ev, idx, timeMs, error } = point;
             const isParetoOptimal = frontier.some((p) => p.idx === idx);
+
+            const safeSolver = escapePlotlyHtml(ev.solver_name);
+            const safeHash = escapePlotlyHtml(ev.eval_hash.slice(0, 6));
+            const safeSpeedup = escapePlotlyHtml(ev.metrics.speedup);
+
             traces.push({
                 x: [timeMs],
                 y: [error],
                 type: "scatter",
                 mode: "markers+text",
-                name: `${ev.solver_name} (${ev.eval_hash.slice(0, 6)})`,
-                text: [`${ev.solver_name} (${ev.metrics.speedup}x)`],
+                name: `${safeSolver} (${safeHash})`,
+                text: [`${safeSolver} (${safeSpeedup}x)`],
                 textposition: "top center",
                 marker: {
                     color: MODEL_COLORS[idx % MODEL_COLORS.length],
@@ -292,10 +298,10 @@ export default function ArenaComparisonModal({ candidates, onClose }: Props) {
                     line: { color: "#ffffff", width: 2 },
                 },
                 hovertemplate:
-                    `<b>${ev.solver_name} [${ev.eval_hash.slice(0, 6)}]</b><br>` +
+                    `<b>${safeSolver} [${safeHash}]</b><br>` +
                     "Inference Time: %{x:.3f} ms<br>" +
                     "Mean Rel. L₂ Error: %{y:.4f}%<br>" +
-                    `Speedup: ${ev.metrics.speedup}x<br>` +
+                    `Speedup: ${safeSpeedup}x<br>` +
                     `Pareto optimal: ${isParetoOptimal ? "Yes" : "No"}<extra></extra>`,
             });
         });

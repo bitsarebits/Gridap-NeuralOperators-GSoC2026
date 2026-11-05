@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Trash2, Loader2, AlertTriangle, X } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { deleteLocalItem, deleteSharedExperiment } from "../../api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+    checkShareStatus,
+    deleteLocalItem,
+    deleteSharedExperiment,
+} from "../../api";
 
 interface Props {
     targetHash: string;
@@ -26,6 +30,13 @@ export default function DeleteButton({
     const [isDeleting, setIsDeleting] = useState(false);
     const queryClient = useQueryClient();
 
+    const { data: canShare = false } = useQuery({
+        queryKey: ["server", "canShare"],
+        queryFn: checkShareStatus,
+        staleTime: Infinity,
+        enabled: mode === "cloud",
+    });
+
     const handleDelete = async () => {
         setIsDeleting(true);
         try {
@@ -39,8 +50,6 @@ export default function DeleteButton({
                 );
             }
 
-            // Invalidate cache to remove the item from UI
-            queryClient.invalidateQueries({ queryKey: ["registry", "merged"] });
             if (onSuccess) {
                 onSuccess();
             }
@@ -49,9 +58,15 @@ export default function DeleteButton({
             alert("Failed to delete the selected item.");
             setConfirmPhase(false);
         } finally {
+            // Invalidate cache to remove the item from UI
+            await queryClient.invalidateQueries({
+                queryKey: ["registry", "merged"],
+            });
             setIsDeleting(false);
         }
     };
+
+    if (mode === "cloud" && !canShare) return null;
 
     if (confirmPhase) {
         return (

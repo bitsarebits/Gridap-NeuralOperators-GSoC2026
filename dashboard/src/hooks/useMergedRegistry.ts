@@ -27,7 +27,7 @@ const mergeRegistries = (
                 ...(remoteItem || {}),
                 ...local[category][hash],
                 _isShared: isAlsoShared,
-                _isLocal: true, // Metadata to distinguish local presence
+                _isLocal: local[category][hash]?._isLocal === true, // Physical artifact presence
             };
         });
     };
@@ -66,6 +66,6 @@ export const useMergedRegistry = () => {
             return mergeRegistries(localData, remoteData);
         },
         refetchOnWindowFocus: true,
-        staleTime: 1000 * 60 * 5, // 5 minutes cache
+        staleTime: 1000 * 15, // Re-check physical artifact presence frequently
     });
 };

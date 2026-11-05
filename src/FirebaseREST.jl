@@ -136,7 +136,9 @@ function check_document_exists(access_token::String, collection::String, documen
         return false
     end
 
-    firestore_url = "https://firestore.googleapis.com/v1/projects/$(cred["project_id"])/databases/(default)/documents/$(collection)/$(document_id)"
+    safe_doc_id = HTTP.URIs.escapeuri(String(document_id))
+    safe_collection = HTTP.URIs.escapeuri(String(collection))
+    firestore_url = "https://firestore.googleapis.com/v1/projects/$(cred["project_id"])/databases/(default)/documents/$(safe_collection)/$(safe_doc_id)"
 
     headers = ["Authorization" => "Bearer $access_token"]
 
@@ -232,7 +234,9 @@ function push_to_firestore(access_token::String, collection::String, document_id
     firestore_document = _julia_to_firestore_dict(payload)
 
     # Use PATCH for Upsert behavior
-    firestore_url = "https://firestore.googleapis.com/v1/projects/$(project_id)/databases/(default)/documents/$(collection)/$(document_id)"
+    safe_doc_id = HTTP.URIs.escapeuri(String(document_id))
+    safe_collection = HTTP.URIs.escapeuri(String(collection))
+    firestore_url = "https://firestore.googleapis.com/v1/projects/$(project_id)/databases/(default)/documents/$(safe_collection)/$(safe_doc_id)"
 
     headers = [
         "Authorization" => "Bearer $access_token",
@@ -267,7 +271,9 @@ function delete_from_firestore(access_token::String, collection::String, documen
         return false
     end
 
-    url = "https://firestore.googleapis.com/v1/projects/$(cred["project_id"])/databases/(default)/documents/$(collection)/$(document_id)"
+    safe_doc_id = HTTP.URIs.escapeuri(String(document_id))
+    safe_collection = HTTP.URIs.escapeuri(String(collection))
+    url = "https://firestore.googleapis.com/v1/projects/$(cred["project_id"])/databases/(default)/documents/$(safe_collection)/$(safe_doc_id)"
     headers = ["Authorization" => "Bearer $access_token"]
 
     try

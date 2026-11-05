@@ -45,11 +45,11 @@ export default function SyncWorkspaceButton({
     };
 
     return (
-        <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
+        <div className="flex flex-col items-stretch sm:items-end gap-1 w-full sm:w-auto">
             <button
                 onClick={handleSync}
                 disabled={isSyncing}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg font-semibold transition-all shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-sm transition-all disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
                 title="Download required files to your local DrWatson folders"
             >
                 {isSyncing ? (
@@ -61,7 +61,7 @@ export default function SyncWorkspaceButton({
             </button>
 
             {error && (
-                <div className="flex items-center gap-1 text-red-600 text-xs font-medium max-w-xs text-right">
+                <div className="flex items-center gap-1 text-red-600 text-xs font-medium max-w-xs text-right mt-1">
                     <AlertCircle size={14} className="shrink-0" />
                     <span>{error}</span>
                 </div>
