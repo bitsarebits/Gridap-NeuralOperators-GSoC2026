@@ -1,0 +1,38 @@
+services:
+  gridap-lab:
+    # Public image on Guthub Container Registry
+    image: ghcr.io/bitsarebits/gridap-neuraloperators-gsoc2026:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        JULIA_CPU_TARGET: "native"
+        BUILD_THREADS: "4"
+      ulimits:
+        nofile:
+          soft: 65536
+          hard: 65536
+    container_name: gridap-neuraloperators
+    restart: unless-stopped
+
+    # Run Julia as an Ubuntu user so that files in ./data and ./plots are not owned by root
+    user: "${UID:-1000}:${GID:-1000}"
+
+    # Share host IPC namespace: allows direct host /dev/shm access and zero-copy IPC for XLA (Reactant.jl) & NCCL/CUDA
+    ipc: host
+
+    # Exposes the port ONLY to localhost (127.0.0.1) on your host machine for security.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    environment:
+      - JULIA_NUM_THREADS=auto
+      - JULIA_SERVER_HOST=0.0.0.0
+      - JULIA_SERVER_PORT=8080
+
+    # BIND MOUNTS: Links folders on your host machine to those inside the container.
+    # All FEM snapshots (.jld2), model weights, plots (.json), and registry.json
+    # are physically saved on your hard drive and persist even if the container get deleted
+    volumes:
+      - ./data:/app/data
+      - ./plots:/app/plots

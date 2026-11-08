@@ -1369,10 +1369,13 @@ println("===================================================================\n")
 Base.exit_on_sigint(false)
 
 
+const SERVER_HOST = get(ENV, "JULIA_SERVER_HOST", "127.0.0.1")
+const SERVER_PORT = parse(Int, get(ENV, "JULIA_SERVER_PORT", "8080"))
+
 # Attach the CORS middleware and start serving
 serve(
-    host="127.0.0.1",
-    port=8080,
+    host=SERVER_HOST,
+    port=SERVER_PORT,
     middleware=[security_and_cors_middleware],
     access_log=nothing,
     async=true

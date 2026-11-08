@@ -423,3 +423,6 @@ firebase-auth.json
 
 # sys images
 sysimages/
+
+# Custom docker
+docker-compose.override.yml

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-SYSIMAGE="sysimages/sys_gridaproms.so"
+SYSIMAGE="sysimages/sys_NonlinearROMs.so"
 SERVER_SCRIPT="scripts/server_dashboard.jl"
 JULIA_CMD="julia --project=. -t 4"
 

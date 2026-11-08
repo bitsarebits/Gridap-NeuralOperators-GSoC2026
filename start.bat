@@ -2,7 +2,7 @@
 setlocal
 
 :: Set variables
-set "SYSIMAGE=sysimages\sys_gridaproms.so"
+set "SYSIMAGE=sysimages\sys_NonlinearROMs.so"
 set "SERVER_SCRIPT=scripts\server_dashboard.jl"
 set "JULIA_CMD=julia --project=. -t 4"
 

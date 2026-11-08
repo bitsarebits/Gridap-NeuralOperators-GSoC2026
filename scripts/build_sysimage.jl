@@ -16,7 +16,7 @@ packages_to_compile = [
 # Create the sysimages directory if it doesn't exist
 out_dir = joinpath(@__DIR__, "..", "sysimages")
 mkpath(out_dir)
-out_file = joinpath(out_dir, "sys_gridaproms.so")
+out_file = joinpath(out_dir, "sys_NonlinearROMs.so")
 
 println("Building custom sysimage... This will take some time, but will save it later.")
 
@@ -26,4 +26,4 @@ create_sysimage(
     precompile_execution_file="scripts/precompile_trace.jl"
 )
 
-println("Sysimage created successfully! Run Julia with: julia --sysimage=sysimages/sys_gridaproms.so")
+println("Sysimage created successfully! Run Julia with: julia --sysimage=sysimages/sys_NonlinearROMs.so")

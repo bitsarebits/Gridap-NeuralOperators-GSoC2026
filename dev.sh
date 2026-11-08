@@ -21,9 +21,9 @@ cleanup() {
 trap cleanup INT TERM ERR EXIT
 
 JULIA_CMD="julia"
-if [ -f "sys_gridaproms.so" ]; then
+if [ -f "sys_NonlinearROMs.so" ]; then
     echo "📦 Custom sysimage detected. Booting with extreme speed..."
-    JULIA_CMD="julia --sysimage=sys_gridaproms.so"
+    JULIA_CMD="julia --sysimage=sys_NonlinearROMs.so"
 fi
 
 echo "🚀 [1/2] Starting Julia API Server on port 8080..."

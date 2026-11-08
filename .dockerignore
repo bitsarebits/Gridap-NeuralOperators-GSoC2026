@@ -1,0 +1,22 @@
+# Git e CI
+.git
+.github
+repomix-output.*
+
+# Dependencies and local frontend's builds
+dashboard/node_modules
+dashboard/dist
+dashboard/.vite
+functions/
+
+# DrWatson's Artefacts and local Sysimages
+data/sims/
+data/models/
+data/registry.json
+plots/
+sysimages/
+
+# Credentials
+firebase-auth.json
+*.env
+*.local
