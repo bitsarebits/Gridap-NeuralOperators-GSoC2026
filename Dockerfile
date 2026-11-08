@@ -2,6 +2,7 @@
 
 
 # Layer 1: React Frontend Compilation (Node.js 22)
+# ==============================================================================
 FROM node:22-alpine AS frontend-builder
 
 WORKDIR /build/dashboard
@@ -23,7 +24,7 @@ FROM julia:1.12.7-bookworm AS julia-deps
 
 WORKDIR /app
 
-ARG BUILD_THREADS="2"
+ARG BUILD_THREADS="4"
 
 # Set the Depot in a fixed path and deactivate automatic precompilation to control it manually
 ENV JULIA_DEPOT_PATH="/usr/local/share/julia" \
@@ -41,32 +42,7 @@ RUN julia --project=/app -e ' \
     Pkg.precompile()'
 
 
-# Layer3: Compilation of the Sysimage
-FROM julia-deps AS sysimage-builder
-
-# PackageCompiler requires a C/C++ compiler (gcc/g++) to link the .so file
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-ARG JULIA_CPU_TARGET="native"
-ARG BUILD_THREADS="2"
-
-# JULIA_IMAGE_THREADS=2 to limit the C++/LLVM threads of PackageCompiler
-ENV JULIA_CPU_TARGET=${JULIA_CPU_TARGET} \
-    JULIA_IMAGE_THREADS=${BUILD_THREADS} \
-    JULIA_NUM_THREADS=${BUILD_THREADS}
-
-# Copy Julia source code and scripts for precompilation tracing
-COPY src/ ./src/
-COPY scripts/ ./scripts/
-
-# Run the build script to generate /app/sysimages/sys_NonlinearROMs.so
-RUN julia --project=/app scripts/build_sysimage.jl
-
-
-
-# Layer 4: Final Runtime
+# Layer 3: Final Runtime
 FROM julia:1.12.7-bookworm AS runtime
 
 WORKDIR /app
@@ -86,9 +62,6 @@ ENV JULIA_DEPOT_PATH="/usr/local/share/julia" \
 # Copy the precompiled Julia Depot
 COPY --from=julia-deps /usr/local/share/julia /usr/local/share/julia
 
-# Copy the prepared Sysimage (.so) leaving gcc/build-essential behind
-COPY --from=sysimage-builder /app/sysimages /app/sysimages
-
 # Copy the compiled static React files (leaving Node.js behind)
 COPY --from=frontend-builder /build/dashboard/dist /app/dashboard/dist
 
@@ -96,6 +69,8 @@ COPY --from=frontend-builder /build/dashboard/dist /app/dashboard/dist
 COPY Project.toml Manifest.toml* ./
 COPY src/ ./src/
 COPY scripts/ ./scripts/
+
+RUN julia --project=/app -e 'using Pkg; Pkg.precompile()'
 
 # Pre-create directories expected by DrWatson for Docker volumes (as user)
 RUN mkdir -p /app/data/sims /app/data/models /app/plots && \
@@ -107,5 +82,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8080/api/ping || exit 1
 
-# Launch Julia loading the precompiled Sysimage directly
-CMD ["julia", "--project=/app", "--sysimage=/app/sysimages/sys_NonlinearROMs.so", "scripts/server_dashboard.jl"]
+# Launch Julia
+CMD ["julia", "--project=/app", "scripts/server_dashboard.jl"]
