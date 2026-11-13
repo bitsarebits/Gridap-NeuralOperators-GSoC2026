@@ -30,7 +30,7 @@ export default function ServerConnectionScreen({
     onOpenCatalog,
     onOpenDocs,
 }: ServerConnectionScreenProps) {
-    const isGitHubPages = !window.location.hostname.endsWith("github.io");
+    const isGitHubPages = window.location.hostname.endsWith("github.io");
 
     if (isGitHubPages && status !== "connected") {
         return (
