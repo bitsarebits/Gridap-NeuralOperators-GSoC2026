@@ -4,14 +4,23 @@ import Pkg
 # The project root for these experiments is one level up
 const EXPERIMENT_ROOT = joinpath(@__DIR__, "..")
 
-@info "Bootstrapping Julia environment..."
-Pkg.activate(EXPERIMENT_ROOT)
-Pkg.instantiate()
-
+# Execute Pkg.instantiate() only if not in a Docker container
+if !haskey(ENV, "JULIA_SERVER_HOST")
+    @info "Bootstrapping Julia environment..."
+    Pkg.activate(EXPERIMENT_ROOT)
+    Pkg.instantiate()
+else
+    Pkg.activate(EXPERIMENT_ROOT)
+end
 
 using DrWatson
 
 @quickactivate :experiments_NeuralOperators
+
+# Ensure required workspace directories exist on startup (especially on fresh bind mounts)
+mkpath(datadir("sims"))
+mkpath(datadir("models"))
+mkpath(plotsdir())
 
 using Oxygen
 using HTTP
@@ -27,6 +36,7 @@ using experiments_NeuralOperators.LRSchedulers
 using experiments_NeuralOperators.Auth
 using experiments_NeuralOperators.FirebaseREST
 using experiments_NeuralOperators.RegistryArtifacts
+using experiments_NeuralOperators.Utils: raw_body
 include("run_all_models.jl")
 
 # Check for credentials via autodiscovery
@@ -49,6 +59,7 @@ const ACTIVE_TASKS = Dict{String,Task}()
 # Keep track of the message queues for each session (Buffer: 1000 messages)
 const SESSION_CHANNELS = Dict{String,Channel{String}}()
 const SESSION_CANCEL_FLAGS = Dict{String,Threads.Atomic{Bool}}()
+const SESSION_CHANNEL_CAPACITY = 1000
 
 # CONSUMER (light task, from channel to webSocket)
 # Killed when web task get killed or refreshed, new one created for the new WebSocket
@@ -66,7 +77,7 @@ const SHUTDOWN_EVENT = Threads.Event()
 const STATE_LOCK = ReentrantLock()
 
 # Track the WS connection to shutdown them
-const ACTIVE_WS = Set{HTTP.WebSocket}()
+const ACTIVE_WS = Set{HTTP.WebSockets.WebSocket}()
 
 
 # CORS Middleware
@@ -290,7 +301,7 @@ function safe_firebase_download(remote_object_path::String, local_dest::String)
             end
             if !isnothing(direct_response) && direct_response.status == 200
                 @info "Downloaded Firebase artifact directly using service-account credentials: $remote_object_path"
-                persist_downloaded_bytes(direct_response.body)
+                persist_downloaded_bytes(raw_body(direct_response))
                 return nothing
             elseif !isnothing(direct_response)
                 @warn "Direct Firebase Storage access failed; trying the read-only Cloud Function proxy." object=remote_object_path status=direct_response.status
@@ -305,7 +316,7 @@ function safe_firebase_download(remote_object_path::String, local_dest::String)
     proxy_response = HTTP.get(proxy_endpoint; status_exception=false, readtimeout=30)
     if proxy_response.status != 200
         detail = try
-            JSON3.read(proxy_response.body)["message"]
+            JSON3.read(raw_body(proxy_response))["message"]
         catch
             "HTTP $(proxy_response.status)"
         end
@@ -313,16 +324,16 @@ function safe_firebase_download(remote_object_path::String, local_dest::String)
     end
 
     if category == "plots"
-        persist_downloaded_bytes(proxy_response.body)
+        persist_downloaded_bytes(raw_body(proxy_response))
         return nothing
     end
 
-    proxy_data = JSON3.read(proxy_response.body)
+    proxy_data = JSON3.read(raw_body(proxy_response))
     signed_url = String(proxy_data["signed_url"])
     @info "Downloading binary artifact to $local_dest..."
     response = HTTP.get(signed_url; redirect=false, status_exception=false, readtimeout=120)
     response.status == 200 || error("Signed Storage download failed with HTTP $(response.status) for $remote_object_path")
-    persist_downloaded_bytes(response.body)
+    persist_downloaded_bytes(raw_body(response))
     return nothing
 end
 
@@ -346,7 +357,7 @@ end
 end
 
 function start_session_sender(
-    ws::HTTP.WebSocket,
+    ws::HTTP.WebSockets.WebSocket,
     ch::Channel{String},
 )
     return Threads.@spawn begin
@@ -361,15 +372,9 @@ function start_session_sender(
     end
 end
 
-# Endpoint WebSocket
-@websocket "/ws/simulate" function (ws::HTTP.WebSocket)
-    host_hdr = lowercase(HTTP.header(ws.request, "Host", ""))
-    origin_hdr = HTTP.header(ws.request, "Origin", "")
-    if !(host_hdr in ALLOWED_HOSTS) || (!isempty(origin_hdr) && !(origin_hdr in ALLOWED_ORIGINS))
-        close(ws)
-        return
-    end
 
+# Simulation WebSocket -> endpoint before Oxygen serve()
+function handle_simulation_websocket(ws::HTTP.WebSockets.WebSocket)
     local sender_task = nothing
     local session_channel = nothing
 
@@ -517,7 +522,7 @@ end
 
                     SESSION_HISTORY[session_id] = String[]
 
-                    session_channel = Channel{String}(1000)
+                    session_channel = Channel{String}(SESSION_CHANNEL_CAPACITY)
                     SESSION_CHANNELS[session_id] = session_channel
 
                     cancel_flag = Threads.Atomic{Bool}(false)
@@ -547,10 +552,9 @@ end
 
                                 if !isnothing(ch) && isopen(ch)
                                     try
-                                        if length(ch.data) >= ch.sz_max
+                                        if Base.n_avail(ch) >= SESSION_CHANNEL_CAPACITY && !isempty(ch)
                                             take!(ch)
                                         end
-
                                         put!(ch, serialized)
                                     catch err
                                         err isa InterruptException && rethrow()
@@ -577,13 +581,14 @@ end
                                 json_path = plotsdir(lowercase(solver_name), "eval_$(eval_hash).json")
                                 isfile(json_path) || error("Evaluation JSON not found after generation: $json_path")
                                 eval_data = JSON3.read(read(json_path, String), Dict{String,Any})
-                                HTTP.WebSockets.isclosed(ws) || put!(session_channel, JSON3.write(Dict(
+                                success_payload = Dict(
                                     "type" => "success",
                                     "data_hash" => data_hash,
                                     "model_hash" => model_hash,
                                     "eval_hash" => eval_hash,
                                     "eval_data" => eval_data
-                                )))
+                                )
+                                log_cb(success_payload)
                             catch e
                                 if e isa InterruptException ||
                                     (e isa TaskFailedException &&
@@ -605,13 +610,26 @@ end
                                 end
                             finally
                                 @info "Cleaning up simulation session" session_id
-                                lock(STATE_LOCK) do
+                                ch_to_close = lock(STATE_LOCK) do
                                     delete!(ACTIVE_TASKS, session_id)
                                     delete!(SESSION_CANCEL_FLAGS, session_id)
-                                    delete!(SESSION_HISTORY, session_id)
-                                    if haskey(SESSION_CHANNELS, session_id)
-                                        close(SESSION_CHANNELS[session_id])
-                                        delete!(SESSION_CHANNELS, session_id)
+                                    pop!(SESSION_CHANNELS, session_id, nothing)
+                                end
+                                if !isnothing(ch_to_close) && isopen(ch_to_close)
+                                    # Wait max 2 sec that the sender_task empty the "success" message
+                                    t_wait = time()
+                                    while isready(ch_to_close) && (time() - t_wait) < 2.0
+                                        sleep(0.02)
+                                    end
+                                    close(ch_to_close)
+                                end
+                                # Remove the history after 10sec in case of fast refreshes
+                                @async begin
+                                    sleep(10.0)
+                                    lock(STATE_LOCK) do
+                                        if !haskey(ACTIVE_TASKS, session_id)
+                                            delete!(SESSION_HISTORY, session_id)
+                                        end
                                     end
                                 end
                             end
@@ -639,8 +657,10 @@ end
             @info "WebSocket received Ctrl+C. Broadcasting shutdown event to all threads..."
             Threads.atomic_xchg!(IS_SHUTTING_DOWN, true)
             notify(SHUTDOWN_EVENT)
+
         elseif e isa EOFError || e isa Base.IOError
-            # WebSocket closed correctly
+            @debug "WebSocket connection closed"
+
         else
             @error "WebSocket crash:" exception=(e, catch_backtrace())
         end
@@ -682,7 +702,7 @@ end
 @post "/api/check_registry" function (req::HTTP.Request)
     try
         # Parse incoming JSON payload
-        payload = JSON3.read(req.body)
+        payload = JSON3.read(raw_body(req))
 
         # Build configs
         fem_config, solver, eval_config = build_configs(payload)
@@ -760,7 +780,7 @@ end
 # is only a fallback for older/incomplete registry entries.
 @post "/api/get_evaluation_plot" function (req::HTTP.Request)
     payload = try
-        JSON3.read(req.body, Dict{String,Any})
+        JSON3.read(raw_body(req), Dict{String,Any})
     catch e
         return HTTP.Response(
             400,
@@ -848,7 +868,7 @@ end
     # Parse Payload
     local payload::Dict{String,Any}
     try
-        payload = JSON3.read(req.body, Dict{String,Any})
+        payload = JSON3.read(raw_body(req), Dict{String,Any})
     catch e
         return HTTP.Response(
             400,
@@ -1004,7 +1024,7 @@ end
 # safe_firebase_download falls back to the read-only Cloud Function proxy.
 @post "/api/sync_experiment" function (req::HTTP.Request)
     payload = try
-        JSON3.read(req.body, Dict{String,Any})
+        JSON3.read(raw_body(req), Dict{String,Any})
     catch e
         return HTTP.Response(400, ["Content-Type" => "application/json"],
             JSON3.write(Dict("status" => "error", "message" => "Invalid JSON payload: $(sprint(showerror, e))")))
@@ -1151,7 +1171,7 @@ end
 
 # Delete endpoint (Local & Cloud)
 @post "/api/delete_local" function (req::HTTP.Request)
-    payload = JSON3.read(req.body, Dict{String,Any})
+    payload = JSON3.read(raw_body(req), Dict{String,Any})
     target_hash = validate_hash(payload["hash"])
     target_type = payload["type"] # "evaluation", "model", or "data"
 
@@ -1232,7 +1252,7 @@ end
         return HTTP.Response(403, JSON3.write(Dict("status" => "error", "message" => "Firebase publishing is disabled.")))
     end
 
-    payload = JSON3.read(req.body, Dict{String,Any})
+    payload = JSON3.read(raw_body(req), Dict{String,Any})
     raw_eval_hash = get(payload, "eval_hash", nothing)
     eval_hash = try
         validate_hash(raw_eval_hash)
@@ -1256,7 +1276,7 @@ end
             JSON3.write(Dict("status" => "error", "message" => "Shared experiment not found in Firestore.")))
     end
 
-    doc_json = JSON3.read(String(get_resp.body))
+    doc_json = JSON3.read(String(raw_body(get_resp)))
     hashes_fields = doc_json[:fields][:hashes][:mapValue][:fields]
     model_hash = validate_hash(String(hashes_fields[:model_hash][:stringValue]))
     data_hash = validate_hash(String(hashes_fields[:data_hash][:stringValue]))
@@ -1286,7 +1306,7 @@ end
             JSON3.write(Dict("status" => "error", "message" => "The experiment was removed, but shared asset garbage collection could not verify remaining references.")))
     end
 
-    parsed_page = JSON3.read(String(resp.body))
+    parsed_page = JSON3.read(String(raw_body(resp)))
     if haskey(parsed_page, :nextPageToken)
         @warn "Firestore collection has multiple pages; skipping automatic storage GC to prevent accidental deletion."
         return JSON3.write(Dict("status" => "success", "message" => "Experiment removed. Shared data/model files were retained because the gallery spans multiple pages."))
@@ -1341,7 +1361,7 @@ if isdir(BUILD_DIR)
 
     # Redirect root requests (localhost:8080/) directly to the dashboard
     @get "/" function (req::HTTP.Request)
-        return HTTP.Response(302, ["Location" => "$REPO_BASE/index.html"], body="")
+        return HTTP.Response(302, ["Location" => "$REPO_BASE/index.html"])
     end
 
     # Catch-all route for SPA client-side routing. but the architecture is ready also for React Router.
@@ -1368,17 +1388,82 @@ println("===================================================================\n")
 # This forces Julia to throw a catchable InterruptException instead.
 Base.exit_on_sigint(false)
 
+function dashboard_stream_handler(middleware::Function)
+
+    # Standard Oxygen HTTP handler:
+    # Normal requests pass through this
+    http_handler = Oxygen.Core.stream_handler(middleware)
+
+    return function (stream::HTTP.Stream)
+
+        req = stream.message
+        request_path = first(split(req.target, '?'; limit=2))
+
+        # Other requests are handled normally by Oxygen
+        if request_path != "/ws/simulate"
+            return http_handler(stream)
+        end
+
+        # If someone asks for this endpoint without the upgrade to WebSocket,
+        # returns a normal HTTP response.
+        if !HTTP.WebSockets.isupgrade(req)
+            HTTP.setstatus(stream, 426)
+            HTTP.setheader(stream, "Content-Type" => "application/json")
+            HTTP.startwrite(stream)
+
+            write(stream, JSON3.write(Dict(
+                "status" => "error",
+                "message" => "WebSocket upgrade required."
+            )))
+
+            HTTP.closewrite(stream)
+            return nothing
+        end
+
+        # Check the Host and the Origin before the upgrade.
+        host_hdr = lowercase(HTTP.header(req, "Host", ""))
+        origin_hdr = HTTP.header(req, "Origin", "")
+
+        allowed = host_hdr in ALLOWED_HOSTS &&
+            (isempty(origin_hdr) || origin_hdr in ALLOWED_ORIGINS)
+
+        if !allowed
+            HTTP.setstatus(stream, 403)
+            HTTP.setheader(stream, "Content-Type" => "application/json")
+            HTTP.startwrite(stream)
+
+            write(stream, JSON3.write(Dict(
+                "status" => "error",
+                "message" => "Forbidden WebSocket origin or host."
+            )))
+
+            HTTP.closewrite(stream)
+            return nothing
+        end
+
+        # Direct upgrade: the WebSocket doesn't pass through
+        # the normal Oxygen middleware of HTTP deserialization.
+        HTTP.WebSockets.upgrade(stream) do ws
+            handle_simulation_websocket(ws)
+        end
+
+        return nothing
+    end
+end
+
 
 const SERVER_HOST = get(ENV, "JULIA_SERVER_HOST", "127.0.0.1")
 const SERVER_PORT = parse(Int, get(ENV, "JULIA_SERVER_PORT", "8080"))
 
 # Attach the CORS middleware and start serving
 serve(
+    handler=dashboard_stream_handler,
     host=SERVER_HOST,
     port=SERVER_PORT,
     middleware=[security_and_cors_middleware],
     access_log=nothing,
-    async=true
+    async=true,
+    show_banner=false
 )
 
 try

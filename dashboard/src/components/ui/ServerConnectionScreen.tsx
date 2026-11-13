@@ -14,16 +14,23 @@ interface ServerConnectionScreenProps {
     onOpenDocs?: () => void;
 }
 
-const CLONE_COMMANDS = `git clone https://github.com/bitsarebits/Gridap-NeuralOperators-GSoC2026.git
+const DOCKER_COMMANDS = `mkdir -p gridap-lab && cd gridap-lab
+mkdir -p data/sims data/models plots
+curl -fsSLO https://raw.githubusercontent.com/bitsarebits/Gridap-NeuralOperators-GSoC2026/main/docker-compose.release.yml
+docker compose -f docker-compose.release.yml pull
+LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose -f docker-compose.release.yml up -d`;
+
+const SOURCE_COMMANDS = `git clone https://github.com/bitsarebits/Gridap-NeuralOperators-GSoC2026.git
 cd Gridap-NeuralOperators-GSoC2026
-julia scripts/server_dashboard.jl`;
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia --project=. scripts/server_dashboard.jl`;
 
 export default function ServerConnectionScreen({
     status,
     onOpenCatalog,
     onOpenDocs,
 }: ServerConnectionScreenProps) {
-    const isGitHubPages = window.location.hostname.endsWith("github.io");
+    const isGitHubPages = !window.location.hostname.endsWith("github.io");
 
     if (isGitHubPages && status !== "connected") {
         return (
@@ -67,18 +74,74 @@ export default function ServerConnectionScreen({
                     </div>
                 )}
 
-                <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 w-full min-w-0 overflow-hidden text-left shadow-sm">
-                    <h3 className="font-semibold text-sm sm:text-base text-slate-800 mb-2">
-                        Want to run new simulations locally?
-                    </h3>
-                    <p className="text-xs sm:text-sm text-slate-500 mb-4 leading-relaxed">
-                        Clone the GSoC experiments repository and run the local
-                        server to unlock the Pipeline Orchestrator and
-                        interactive training.
-                    </p>
-                    <pre className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-[11px] sm:text-xs font-mono text-slate-700 w-full max-w-full overflow-x-auto select-all leading-relaxed">
-                        {CLONE_COMMANDS}
-                    </pre>
+                <div className="flex flex-col gap-4 w-full min-w-0">
+                    {/* Recommended: Docker */}
+                    <section className="bg-white border border-blue-200 rounded-xl p-4 sm:p-6 w-full min-w-0 overflow-hidden text-left shadow-sm">
+                        <div className="flex items-start gap-3 mb-3">
+                            <div className="bg-blue-50 text-blue-600 p-2 rounded-lg shrink-0">
+                                <Server size={20} />
+                            </div>
+
+                            <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                    <h3 className="font-semibold text-sm sm:text-base text-slate-800">
+                                        Run with Docker
+                                    </h3>
+                                    <span className="text-[10px] font-bold uppercase tracking-wide bg-blue-50 text-blue-700 px-2 py-1 rounded-md">
+                                        Recommended
+                                    </span>
+                                </div>
+
+                                <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                                    Start the pre-built application without
+                                    installing Julia or Node.js. Requires Docker
+                                    Engine or Docker Desktop with the Docker
+                                    Compose plugin.
+                                </p>
+                            </div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-400 mb-2">
+                            Linux / macOS / WSL
+                        </p>
+
+                        <pre className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-[11px] sm:text-xs font-mono text-slate-700 w-full max-w-full overflow-x-auto select-all leading-relaxed whitespace-pre">
+                            {DOCKER_COMMANDS}
+                        </pre>
+
+                        <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+                            Once the container is running, open{" "}
+                            <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">
+                                http://127.0.0.1:8080
+                            </code>{" "}
+                            in your browser.
+                        </p>
+                    </section>
+
+                    {/* Alternative: run from source */}
+                    <section className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 w-full min-w-0 overflow-hidden text-left shadow-sm">
+                        <div className="flex items-start gap-3 mb-3">
+                            <div className="bg-slate-100 text-slate-600 p-2 rounded-lg shrink-0">
+                                <BookOpen size={20} />
+                            </div>
+
+                            <div className="min-w-0">
+                                <h3 className="font-semibold text-sm sm:text-base text-slate-800 mb-1">
+                                    Run from source
+                                </h3>
+
+                                <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                                    Alternatively, clone the repository and run
+                                    the Julia backend directly. Requires a local
+                                    Julia installation.
+                                </p>
+                            </div>
+                        </div>
+
+                        <pre className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-[11px] sm:text-xs font-mono text-slate-700 w-full max-w-full overflow-x-auto select-all leading-relaxed whitespace-pre">
+                            {SOURCE_COMMANDS}
+                        </pre>
+                    </section>
                 </div>
             </div>
         );

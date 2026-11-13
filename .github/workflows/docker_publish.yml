@@ -4,6 +4,7 @@ on:
     push:
         branches:
             - main
+            - test/docker-sysimage
         paths:
             - "src/**"
             - "scripts/**"
@@ -25,7 +26,7 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v4
 
-            # Free ~25 GB of disk space on Github VM (Reactant + Sysimage)
+            # Free ~25 GB of disk space on Github VM (Reactant + JLL artifacts)
             - name: Maximize build disk space
               run: |
                   sudo rm -rf /usr/share/dotnet
@@ -44,15 +45,25 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
+            - name: Docker metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ghcr.io/bitsarebits/gridap-neuraloperators-gsoc2026
+                  tags: |
+                      type=raw,value=latest,enable={{is_default_branch}}
+                      type=ref,event=branch
+                      type=sha,prefix=sha-
+
             - name: Build and Push Universal Docker Image
               uses: docker/build-push-action@v6
               with:
                   context: .
                   push: true
-                  # GHCR requires that the image name is lowercase
-                  tags: ghcr.io/bitsarebits/gridap-neuraloperators-gsoc2026:latest
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
                   build-args: |
-                      JULIA_CPU_TARGET=generic;sandybridge,-xsaveopt;haswell,-rdrnd,base(1)
+                      JULIA_CPU_TARGET=generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)
                       BUILD_THREADS=2
                   cache-from: type=gha
                   cache-to: type=gha,mode=max

@@ -23,7 +23,9 @@ println("Building custom sysimage... This will take some time, but will save it 
 create_sysimage(
     packages_to_compile;
     sysimage_path=out_file,
-    precompile_execution_file="scripts/precompile_trace.jl"
+    precompile_execution_file="scripts/precompile_trace.jl",
+    cpu_target=get(ENV, "JULIA_CPU_TARGET", "native"),
+    sysimage_build_args=`-O1` # LLVM requires half the RAM
 )
 
 println("Sysimage created successfully! Run Julia with: julia --sysimage=sysimages/sys_NonlinearROMs.so")

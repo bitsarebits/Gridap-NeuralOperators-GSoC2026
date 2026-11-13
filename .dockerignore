@@ -1,10 +1,12 @@
+*.log
+.DS_Store
+
 # Git e CI
 .git
 .github
-repomix-output.*
 
 # Dependencies and local frontend's builds
-dashboard/node_modules
+**/node_modules
 dashboard/dist
 dashboard/.vite
 functions/
@@ -18,5 +20,6 @@ sysimages/
 
 # Credentials
 firebase-auth.json
+**/firebase-auth.json
 *.env
 *.local

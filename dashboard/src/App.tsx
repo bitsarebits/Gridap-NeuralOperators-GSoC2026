@@ -1,12 +1,5 @@
 import { useState, useEffect } from "react";
-import {
-    LayoutDashboard,
-    Database,
-    BookOpen,
-    Sun,
-    Moon,
-    ArrowUpRight,
-} from "lucide-react";
+import { LayoutDashboard, Database, BookOpen, Sun, Moon } from "lucide-react";
 import gridapLogo from "./assets/logo-gridap.png";
 
 // Custom Hooks
@@ -230,17 +223,6 @@ function App() {
                             <span>Registry</span>
                         </button>
 
-                        <div className="h-4 w-px bg-slate-200 mx-0.5 shrink-0" />
-
-                        <a
-                            href="https://bitsarebits.github.io/gsoc2026-gridap/"
-                            className="hidden md:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 hover:opacity-90 transition-opacity shrink-0"
-                            title="Read GSoC 2026 Devlog"
-                        >
-                            <span>GSoC Blog</span>
-                            <ArrowUpRight size={14} />
-                        </a>
-
                         <button
                             type="button"
                             onClick={toggleTheme}
@@ -256,20 +238,27 @@ function App() {
 
             {/* Dynamic View Router Outlet */}
             <main className="w-full max-w-7xl px-3 sm:px-4 py-4 sm:py-8 flex justify-center">
-                {currentView === "orchestrator" &&
-                    (serverStatus === "connected" ? (
+                {serverStatus === "connected" && (
+                    <div
+                        className={
+                            currentView === "orchestrator" ? "w-full" : "hidden"
+                        }
+                    >
                         <OrchestratorView
                             serverStatus={serverStatus}
                             initialFormValues={fineTuneData}
                         />
-                    ) : (
+                    </div>
+                )}
+
+                {currentView === "orchestrator" &&
+                    serverStatus !== "connected" && (
                         <ServerConnectionScreen
                             status={serverStatus}
                             onOpenCatalog={() => setCurrentView("catalog")}
                             onOpenDocs={() => setCurrentView("docs")}
                         />
-                    ))}
-
+                    )}
                 {currentView === "catalog" && (
                     <RegistryCatalog
                         serverIsConnected={serverStatus === "connected"}

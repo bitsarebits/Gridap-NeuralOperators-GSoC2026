@@ -104,21 +104,93 @@ julia scripts/run_all_models.jl fno 10000 0.05 1000
 
 **Live Public Gallery:** [https://bitsarebits.github.io/Gridap-NeuralOperators-GSoC2026/](https://bitsarebits.github.io/Gridap-NeuralOperators-GSoC2026/)
 
-This project includes a React web dashboard to orchestrate experiments and visualize High-Fidelity snapshots, training progress, and zero-shot evaluations in real-time.
+### Run the Dashboard with Docker (Recommended)
+
+The easiest way to run the dashboard locally is through the pre-built Docker image published on GitHub Container Registry.
+
+**No local Julia or Node.js installation is required.**
+
+#### Requirements
+
+- Docker Engine or Docker Desktop
+- Docker Compose plugin
+
+#### Start the application
+
+On Linux, macOS, or WSL:
+
+```bash
+mkdir -p gridap-lab && cd gridap-lab
+
+# Create persistent directories
+mkdir -p data/sims data/models plots
+
+# Download the release configuration
+curl -fsSLO https://raw.githubusercontent.com/bitsarebits/Gridap-NeuralOperators-GSoC2026/main/docker-compose.release.yml
+
+# Pull and start the pre-built image
+docker compose -f docker-compose.release.yml pull
+
+LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" \
+  docker compose -f docker-compose.release.yml up -d
+```
+
+Open your browser at:
+
+```text
+http://127.0.0.1:8080
+```
+
+The application stores simulation data, trained models, and generated plots in local directories, which persist across container restarts.
+
+#### Useful commands
+
+```bash
+# Follow server logs
+docker compose -f docker-compose.release.yml logs -f
+
+# Update to the latest published image
+docker compose -f docker-compose.release.yml pull
+docker compose -f docker-compose.release.yml up -d
+
+# Stop the application
+docker compose -f docker-compose.release.yml down
+```
+
+### Run from Source (Julia)
+
+Alternatively, you can run the backend directly from the repository using a local Julia installation.
 
 **Node.js is NOT required** for end-users. The frontend has been pre-compiled into a static build, and the `Oxygen.jl` Julia backend is natively configured to serve it.
 
-### How to Start the Dashboard via Julia
+1. Clone the repository:
 
-1. Open your terminal in the project root directory.
-2. Launch the integrated web-server script using Julia:
+   ```bash
+   git clone https://github.com/bitsarebits/Gridap-NeuralOperators-GSoC2026.git
+   cd Gridap-NeuralOperators-GSoC2026
+   ```
+
+2. Instantiate the Julia environment:
+
+   ```bash
+   julia --project=. -e 'using Pkg; Pkg.instantiate()'
+   ```
+
+3. Start the integrated web server:
+
    ```bash
    julia --project=. scripts/server_dashboard.jl
    ```
-3. Open your web browser and navigate to:
+
+4. Open your browser at:
+
    ```text
-   [http://127.0.0.1:8080](http://127.0.0.1:8080)
+   http://127.0.0.1:8080
    ```
+
+
+
+This project includes a React web dashboard to orchestrate experiments and visualize High-Fidelity snapshots, training progress, and zero-shot evaluations in real-time.
 
 ### Features available via the UI:
 - **Interactive Parameter Tuning:** Configure `FEMConfig`, `DeepONetSolver`, `FNOSolver`, or `NOMADSolver` using visual controls.

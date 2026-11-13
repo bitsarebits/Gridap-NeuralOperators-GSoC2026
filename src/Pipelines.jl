@@ -210,7 +210,7 @@ function execute_train_pipeline(
         error("Required data hash [$data_hash] not found! Run generation first.")
     end
 
-    fem_data = load(data_path)
+    fem_data = load_jld2(data_path)
 
     # Get the scheduler from the struct
     lr_scheduler = init_scheduler(solver.lr_scheduler, solver.epochs)
@@ -288,10 +288,10 @@ function execute_plot_pipeline(
 
     # Load Dependencies
     weights_path = datadir("models", lowercase(solver_name), "model_$(model_hash).jld2")
-    weights_data = load(weights_path)
+    weights_data = load_jld2(weights_path)
 
     data_path = datadir("sims", "data_$(data_hash).jld2")
-    fem_data = load(data_path)
+    fem_data = load_jld2(data_path)
 
     # Build the FEMConfig from the dataset dictionary
     fem_config = FEMConfig(; (Symbol(k) => v for (k, v) in fem_data["config"])...)

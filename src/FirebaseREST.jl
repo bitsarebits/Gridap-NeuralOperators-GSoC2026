@@ -6,6 +6,7 @@ using MbedTLS
 using Base64
 using Dates
 using CodecZlib
+using ..Utils: raw_body
 
 # Bring in Auth for the credentials
 using ..Auth
@@ -108,14 +109,14 @@ function get_access_token()
             response = HTTP.post(GOOGLE_TOKEN_URI, headers, body; status_exception=false)
 
             if response.status >= 200 && response.status < 300
-                resp_data = JSON3.read(response.body)
+                resp_data = JSON3.read(raw_body(response))
                 token_str = String(resp_data.access_token)
                 CACHED_TOKEN[] = token_str
                 TOKEN_EXPIRY[] = exp_sec
                 @debug "Google OAuth Access Token successfully retrieved and cached."
                 return token_str
             else
-                @error "OAuth HTTP Error" status=response.status body=String(response.body)
+                @error "OAuth HTTP Error" status=response.status body=String(raw_body(response))
                 return nothing
             end
         catch e
@@ -210,7 +211,7 @@ function upload_to_storage(access_token::String, file_path::String, destination_
             @info "Successfully uploaded $(destination_name) to Firebase Storage ($(length(file_bytes)) bytes)."
             return "https://firebasestorage.googleapis.com/v0/b/$(bucket_name)/o/$(safe_dest)?alt=media"
         else
-            @error "Firebase Storage HTTP Error" status=response.status body=String(response.body)
+            @error "Firebase Storage HTTP Error" status=response.status body=String(raw_body(response))
             return nothing
         end
     catch e
@@ -253,7 +254,7 @@ function push_to_firestore(access_token::String, collection::String, document_id
             @info "Successfully pushed document $(document_id) to Firestore."
             return true
         else
-            @error "Firestore HTTP Error" status=response.status body=String(response.body)
+            @error "Firestore HTTP Error" status=response.status body=String(raw_body(response))
             return false
         end
     catch e

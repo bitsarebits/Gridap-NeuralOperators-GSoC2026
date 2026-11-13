@@ -3,6 +3,7 @@ module DataGeneration
 using Gridap
 using GridapROMs
 using GridapROMs.ParamDataStructures
+using GridapROMs.TProduct
 
 using ..Solvers
 
@@ -37,11 +38,10 @@ function generate_fem_snapshots(
     c = config.c
     θ = config.theta
 
-    # Spatial domain setup
+    # Spatial domain setup (TProductDiscreteModel provides lexicographically ordered DoFs)
     Ω = (-L, L)
     partition = (nx,)
-    # model = CartesianDiscreteModel(Ω, partition, isperiodic=(true,))
-    model = CartesianDiscreteModel(Ω, partition)
+    model = TProductDiscreteModel(Ω, partition)
 
     # Temporal grid setup
     tdomain = t0:dt:tf
@@ -57,23 +57,21 @@ function generate_fem_snapshots(
     u₀ₚ(σ) = parameterise(u₀, σ)
     uₚₜ(σ, t) = parameterise(u, σ, t)
 
-    # Finite Element Spaces
+    # Finite Element Spaces (ordered along the 1D spatial coordinate)
     reffe = ReferenceFE(lagrangian, Float64, order)
-    # This would be the correct way to define the FE space, but the solve crashes in GridapROMs...
-    # V = OrderedFESpace(model, reffe; vector_type=Vector{Float32})
-    V = OrderedFESpace(model, reffe)
+    τₕ = Triangulation(model)
+    V = TProductFESpace(τₕ, reffe; conformity=:H1)
     U = TransientTrialParamFESpace(V, uₚₜ)
 
     degree = 2 * order
-    τₕ = Triangulation(model)
     dΩ = Measure(τₕ, degree)
 
-    # Weak form definition
+    # Weak form definition (homogeneous transport: rhs = 0)
     m(σ, t, du, v) = ∫(v * du)dΩ
     a(σ, t, u, v) = ∫(v * (c_vec ⋅ ∇(u)))dΩ
-    r(σ, t, u, v) = m(σ, t, ∂t(u), v) + a(σ, t, u, v)
+    rhs(σ, t, v) = ∫(0.0 * v)dΩ
 
-    feop = TransientLinearParamOperator(r, (a, m), D, U, V)
+    feop = TransientLinearParamOperator(rhs, (a, m), D, U, V)
 
     # Solving Phase (High-Fidelity)
     uh₀ₚ(σ) = interpolate_everywhere(u₀ₚ(σ), U(σ, t0))
@@ -81,24 +79,21 @@ function generate_fem_snapshots(
 
     σₒₙ = TransientRealisation(Realisation(σ_values), tdomain)
 
-    # Extract the snapshot matrix using GridapROMs API
-    x_snapshots_raw, _ = solution_snapshots(slvr, feop, σₒₙ, uh₀ₚ)
+    # Extract the snapshot matrix using GridapROMs v0.2+ API
+    x_snapshots_raw = solution_snapshots(slvr, feop, σₒₙ, uh₀ₚ)
 
-    # Convert the GridapROMs custom type into a standard Julia 3D Array
+    # Convert the GridapROMs custom type into a standard Julia 3D Array (N_dofs, N_sigma, N_time)
     # This prevents JLD2 type-reconstruction errors during loading
-    x_snapshots = Float32.(get_all_data(x_snapshots_raw))
-
-    #TODO This is a little hacky, it works as the test case is 1D. For now, it works.
-    # In future, you should consider the following:
-    # x_grid = get_node_coordinates(τₕ) # typeof(x_grid) == Vector{VectorValue{D,Float64}} for D-dimensional problems
+    t_grid = Float32.(tdomain[2:end])
+    raw_data = get_all_data(x_snapshots_raw)
+    x_snapshots = Float32.(reshape(raw_data, num_free_dofs(V), length(σ_values), length(t_grid)))
 
     # Extracting the spatial grid for downstream neural operators
     coord_x(x_val) = x_val[1]
     x_fe_function = interpolate_everywhere(coord_x, V)
 
-    # Cast matrices and vectors to Float32 for the training
+    # Cast spatial coordinates to Float32 for the training
     x_grid = Float32.(get_free_dof_values(x_fe_function))
-    t_grid = Float32.(tdomain[2:end])
 
     return (
         snapshots=x_snapshots,

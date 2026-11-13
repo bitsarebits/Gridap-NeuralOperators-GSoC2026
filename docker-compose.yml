@@ -15,6 +15,15 @@ services:
     container_name: gridap-neuraloperators
     restart: unless-stopped
 
+    # Use a tiny init process (tini) as PID 1 to reap zombie processes and forward signals properly
+    init: true
+
+    # Forward SIGINT (Ctrl+C) instead of SIGTERM to let Julia handle graceful shutdown without C runtime dumps
+    stop_signal: SIGINT
+
+    # Allow up to 30 seconds for the Julia tasks to complete cleanup before forcing kill
+    stop_grace_period: 30s
+
     # Run Julia as an Ubuntu user so that files in ./data and ./plots are not owned by root
     user: "${UID:-1000}:${GID:-1000}"
 

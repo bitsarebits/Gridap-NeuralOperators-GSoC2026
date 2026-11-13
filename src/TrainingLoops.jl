@@ -479,7 +479,7 @@ function prepare_and_train(
             error("Pre-trained model weights not found at $weights_path")
         end
 
-        pretrained_data = load(weights_path)
+        pretrained_data = load_jld2(weights_path)
         ps = pretrained_data["ps"] |> XDEV
         st = pretrained_data["st"] |> XDEV
     else
@@ -588,7 +588,7 @@ function prepare_and_train(
             error("Pre-trained model weights not found at $weights_path")
         end
 
-        pretrained_data = load(weights_path)
+        pretrained_data = load_jld2(weights_path)
         ps = pretrained_data["ps"] |> XDEV
         st = pretrained_data["st"] |> XDEV
     else
@@ -715,7 +715,7 @@ function prepare_and_train(
             error("Pre-trained model weights not found at $weights_path")
         end
 
-        pretrained_data = load(weights_path)
+        pretrained_data = load_jld2(weights_path)
         ps = pretrained_data["ps"] |> XDEV
         st = pretrained_data["st"] |> XDEV
     else
